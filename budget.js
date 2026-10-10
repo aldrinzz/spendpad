@@ -1,4 +1,4 @@
-/* SpendPad budget maths: pure functions, no DOM.
+/* LavishTracker budget maths: pure functions, no DOM.
    Loaded by the app (as window.Budget) and by the node tests (via require). */
 (function (root) {
   'use strict';
