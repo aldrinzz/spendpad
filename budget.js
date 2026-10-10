@@ -165,6 +165,21 @@
     return { cfg, daily: daily(cfg, entries, day), card: card(cfg, entries, day), salary: salary(cfg, entries, day) };
   }
 
+  // ---------- alerts ----------
+  // Warnings shown at the top of the screen. Numbers only; the app words them.
+  function alerts(r, day) {
+    const out = [], c = r.card, d = r.daily, s = r.salary;
+    if (c.bill.overdue) out.push({ id: 'card-overdue', level: 'bad', sheet: 'card', amount: c.bill.left, date: c.bill.due, days: c.bill.lateBy });
+    else if (c.next.amount > 0 && c.next.inDays <= 3) out.push({ id: 'card-due', level: 'warn', sheet: 'card', amount: c.next.amount, date: c.next.date, days: c.next.inDays });
+    if (d.left < 0) out.push({ id: 'over-today', level: 'bad', sheet: 'today', amount: -d.left });
+    // Enough salary left for the rest of today plus the daily limit on every remaining day of the month?
+    const [y, m] = day.split('-').map(Number);
+    const daysAfter = daysBetween(day, ymd(y, m, daysInMonth(y, m)));
+    const needed = Math.max(0, d.left) + d.limit * daysAfter;
+    if (s.left < needed) out.push({ id: 'short', level: 'warn', sheet: 'salary', amount: needed - s.left, needed, have: s.left, perDay: d.limit, daysLeft: daysAfter + 1 });
+    return out;
+  }
+
   // ---------- sync ----------
   // Entries merge by id and settings by key; the newer edit (higher t) wins.
   function merge(into, incoming) {
@@ -183,7 +198,7 @@
 
   const api = {
     DEFAULTS, today, addDays, daysBetween, monthOf, shiftMonth,
-    configFrom, limitFor, cycleOf, dueAfter, daily, card, salary, compute, merge,
+    configFrom, limitFor, cycleOf, dueAfter, daily, card, salary, compute, alerts, merge,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Budget = api;

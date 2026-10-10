@@ -159,3 +159,19 @@ test('bank payments count for the day and the salary, never the card', () => {
   assert.equal(r.salary.bank, 65);
   assert.deepEqual([r.card.cycle.card, r.card.cycle.upi, r.card.owed], [100, 0, 100]);
 });
+
+test('alerts: card due soon, overdue, over today, running short', () => {
+  const base = { 'limit:2026-10': 500, emergency: 0, startDate: '2026-10-10' };
+  const ids = (obj, entries, day) => { const data = { settings: settings(obj), entries: Object.fromEntries(entries.map(e => [e.id, e])) }; return B.alerts(B.compute(data, day), day).map(a => a.id); };
+  // Plenty of salary, nothing due soon: no alerts. (22 days x 500 = 11,000 needed.)
+  assert.deepEqual(ids({ ...base, salary1: 11000, startCycleCard: 1000 }, [], '2026-10-10'), []);
+  // One rupee short for the month.
+  assert.deepEqual(ids({ ...base, salary1: 10999 }, [], '2026-10-10'), ['short']);
+  // Over today's limit.
+  assert.deepEqual(ids({ ...base, salary1: 99999 }, [spend('2026-10-10', 600)], '2026-10-10'), ['over-today']);
+  // Card bill due in 3 days (cycle closed 18 Oct, due 8 Nov).
+  assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-05'), ['card-due']);
+  assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-04'), []);
+  // Unpaid after the due date.
+  assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-09'), ['card-overdue']);
+});

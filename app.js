@@ -135,6 +135,7 @@
     countTo($('#cycleUpi'), c.cycle.upi, animate);
     countTo($('#monthBank'), s.bank, animate);
     $('#whoChip').textContent = cfg['name' + device.owner];
+    paintAlerts(B.alerts(view, day), day);
 
     if (sheetName) updateCalcs();
   }
@@ -144,6 +145,20 @@
     if (!d.carry) return `Daily limit <b>${money(d.limit)}</b>`;
     const plus = d.carry > 0;
     return `<b>${money(d.limit)}</b> ${plus ? '+' : '−'} <b class="${plus ? 'pos' : 'neg'}">${money(Math.abs(d.carry))}</b> ${plus ? 'carried over' : 'overspent'}`;
+  }
+
+  // Warnings at the top. ✕ hides one until tomorrow; tapping it opens the matching sheet.
+  function alertText(a) {
+    if (a.id === 'card-overdue') return `Card bill ${money(a.amount)} overdue by ${a.days} day${a.days === 1 ? '' : 's'}`;
+    if (a.id === 'card-due') return `Card bill ${money(a.amount)} due ${inDays(a.days)} (${fmtDate(a.date)})`;
+    if (a.id === 'over-today') return `Over today’s limit by ${money(a.amount)}`;
+    return `Running short: ${money(a.have)} left, but ${a.daysLeft} days at ${money(a.perDay)} need ${money(a.needed)}`;
+  }
+  function paintAlerts(list, day) {
+    const hidden = device.dismissed || {};
+    $('#alerts').innerHTML = list.filter(a => hidden[a.id] !== day).map(a =>
+      `<div class="alert ${a.level}"><button type="button" class="alert-msg" data-sheet="${a.sheet}">${esc(alertText(a))}</button><button type="button" class="alert-x" data-dismiss="${a.id}" aria-label="Hide until tomorrow">✕</button></div>`
+    ).join('');
   }
 
   // Rolls a number from what is on screen to its new value.
@@ -564,6 +579,14 @@
 
   for (const btn of $$('main [data-sheet]')) btn.addEventListener('click', () => openSheet(btn.dataset.sheet));
   $('#settingsBtn').addEventListener('click', () => openSheet('settings'));
+  $('#alerts').addEventListener('click', ev => {
+    const x = ev.target.closest('[data-dismiss]'), open = ev.target.closest('[data-sheet]');
+    if (x) {
+      device.dismissed = Object.assign({}, device.dismissed, { [x.dataset.dismiss]: view.day });
+      saveDevice();
+      render(false);
+    } else if (open) openSheet(open.dataset.sheet);
+  });
   $('#whoChip').addEventListener('click', () => {
     device.owner = device.owner === '1' ? '2' : '1';
     saveDevice();
