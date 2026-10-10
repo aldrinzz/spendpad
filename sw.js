@@ -1,6 +1,6 @@
 // Offline cache: the app opens instantly from the cache, then quietly refreshes it,
 // so a new version shows up the next time the app is opened.
-const CACHE = 'spendpad-v2';
+const CACHE = 'spendpad-v3';
 const SHELL = [
   './', 'index.html', 'styles.css', 'budget.js', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',

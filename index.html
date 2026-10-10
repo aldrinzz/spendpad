@@ -59,26 +59,27 @@
         <button id="whoChip" class="chip" type="button" aria-label="Who is spending"></button>
       </div>
       <div id="pad" class="pad">
-        <button type="button" data-k="1">1</button>
-        <button type="button" data-k="2">2</button>
-        <button type="button" data-k="3">3</button>
-        <button type="button" data-k="4">4</button>
-        <button type="button" data-k="5">5</button>
-        <button type="button" data-k="6">6</button>
-        <button type="button" data-k="7">7</button>
-        <button type="button" data-k="8">8</button>
-        <button type="button" data-k="9">9</button>
-        <button type="button" data-k="00">00</button>
-        <button type="button" data-k="0">0</button>
-        <button type="button" data-k="del" aria-label="Delete (hold to clear)">
-          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M9 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6-7 6-7Zm3 4 6 6m0-6-6 6"/></svg>
-        </button>
-        <button id="btnCard" class="act card" type="button" data-method="card">
-          <b>Card</b><small id="cycleCard">₹0</small><small class="hint">this cycle</small>
-        </button>
-        <button id="btnUpi" class="act upi" type="button" data-method="upi">
-          <b>UPI</b><small id="cycleUpi">₹0</small><small class="hint">this cycle</small>
-        </button>
+        <div class="digits">
+          <button type="button" data-k="1">1</button>
+          <button type="button" data-k="2">2</button>
+          <button type="button" data-k="3">3</button>
+          <button type="button" data-k="4">4</button>
+          <button type="button" data-k="5">5</button>
+          <button type="button" data-k="6">6</button>
+          <button type="button" data-k="7">7</button>
+          <button type="button" data-k="8">8</button>
+          <button type="button" data-k="9">9</button>
+          <button type="button" data-k="00">00</button>
+          <button type="button" data-k="0">0</button>
+          <button type="button" data-k="del" aria-label="Delete (hold to clear)">
+            <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M9 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6-7 6-7Zm3 4 6 6m0-6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="acts">
+          <button id="btnCard" class="act card" type="button" data-method="card"><b>Card</b><small id="cycleCard">₹0</small><small class="hint">this cycle</small></button>
+          <button id="btnUpi" class="act upi" type="button" data-method="upi"><b>UPI</b><small id="cycleUpi">₹0</small><small class="hint">on card · cycle</small></button>
+          <button id="btnBank" class="act bank" type="button" data-method="bank"><b>Bank</b><small id="monthBank">₹0</small><small class="hint">this month</small></button>
+        </div>
       </div>
     </section>
   </main>

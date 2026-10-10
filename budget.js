@@ -118,7 +118,7 @@
     for (const e of entries) {
       if (e.date > day) continue;
       if (e.type === 'pay') paid += e.amount;
-      else if (e.type === 'spend') {
+      else if (e.type === 'spend' && e.method !== 'bank') { // bank payments never touch the card
         if (e.date < cyc.start) billed += e.amount;
         else if (e.method === 'upi') upiAmt += e.amount;
         else cardAmt += e.amount;
@@ -142,20 +142,21 @@
   }
 
   // ---------- salary ----------
-  // Left this month = combined salary - everything spent this month - emergency fund.
+  // Left this month = combined salary - everything spent this month (Card, UPI and Bank) - emergency fund.
   function salary(cfg, entries, day) {
     const mk = monthOf(day);
     const byWho = { 1: 0, 2: 0 };
-    let spent = 0, before = 0;
+    let spent = 0, before = 0, bank = 0;
     for (const e of entries) {
       if (e.type !== 'spend' || monthOf(e.date) !== mk || e.date > day) continue;
       spent += e.amount;
       byWho[e.who] = (byWho[e.who] || 0) + e.amount;
+      if (e.method === 'bank') bank += e.amount;
     }
     if (cfg.start.date && monthOf(cfg.start.date) === mk) before = cfg.start.monthSpent;
     spent += before;
     const total = cfg.salary1 + cfg.salary2;
-    return { total, s1: cfg.salary1, s2: cfg.salary2, spent, byWho, before, emergency: cfg.emergency, left: total - spent - cfg.emergency };
+    return { total, s1: cfg.salary1, s2: cfg.salary2, spent, byWho, before, bank, emergency: cfg.emergency, left: total - spent - cfg.emergency };
   }
 
   function compute(data, day) {

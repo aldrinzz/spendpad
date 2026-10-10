@@ -147,3 +147,15 @@ test('merge keeps the newer edit of each entry and setting', () => {
   assert.deepEqual([local.settings.x.v, local.settings.y.v], [1, 7]);
   assert.equal(B.merge(local, { entries: [{ id: 'a', amount: 9, t: 9 }] }), false);
 });
+
+test('bank payments count for the day and the salary, never the card', () => {
+  const data = {
+    settings: settings({ 'limit:2026-10': 500, startDate: '2026-10-10', salary1: 1000, emergency: 0 }),
+    entries: { a: Object.assign(spend('2026-10-10', 65, 'bank'), { id: 'a' }), b: Object.assign(spend('2026-10-10', 100, 'card'), { id: 'b' }) },
+  };
+  const r = B.compute(data, '2026-10-10');
+  assert.equal(r.daily.left, 335);
+  assert.equal(r.salary.left, 835);
+  assert.equal(r.salary.bank, 65);
+  assert.deepEqual([r.card.cycle.card, r.card.cycle.upi, r.card.owed], [100, 0, 100]);
+});

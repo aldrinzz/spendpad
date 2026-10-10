@@ -19,6 +19,7 @@
   }
   const monthName = mk => MONTHS[Number(mk.slice(5, 7)) - 1];
   const timeOf = ts => new Date(ts).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  const METHOD = { card: 'Card', upi: 'UPI', bank: 'Bank' };
   const inDays = n => (n === 0 ? 'today' : n === 1 ? 'tomorrow' : 'in ' + n + ' days');
   function ago(ts) {
     const m = Math.round((Date.now() - ts) / 60000);
@@ -36,7 +37,32 @@
   function write(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage blocked: keep working in memory */ } }
 
   const data = Object.assign({ entries: {}, settings: {}, dirty: { entries: {}, settings: {} } }, read(DATA_KEY));
-  const device = Object.assign({ owner: '1', syncUrl: '', syncKey: '', lastSync: 0, syncError: '', welcomed: false }, read(DEVICE_KEY));
+  const device = Object.assign({ owner: '1', syncUrl: '', syncKey: '', lastSync: 0, syncError: '' }, read(DEVICE_KEY));
+
+  // Starting numbers as of Sat 10 Oct 2026, given by Aldrin. Every phone starts from these,
+  // so there is no setup screen. They are stamped t=1, so any later edit (or sync) wins.
+  // Changing SEED_VERSION resets every phone to the seed the next time the app opens.
+  const SEED_VERSION = 1;
+  const SEED = {
+    settings: {
+      name1: 'Aldrin', salary1: 47400, name2: 'Navs', salary2: 26300,
+      'limit:2026-10': 500, emergency: 2000, statementDay: 19, dueDay: 8,
+      startDate: '2026-10-10', startCarry: 0,
+      startMonthSpent: 60085,                     // 73,700 salary - 13,615 left in the bank
+      startCycleCard: 13446, startCycleUpi: 7509, // card bill so far: 20,955, due 8 Nov
+      startBill: 0,
+    },
+    entries: [{ id: 'seed-1', type: 'spend', amount: 65, method: 'bank', who: '1', date: '2026-10-10', ts: new Date(2026, 9, 10, 12).getTime() }],
+  };
+  if (data.seed !== SEED_VERSION) {
+    data.settings = {};
+    for (const k in SEED.settings) data.settings[k] = { v: SEED.settings[k], t: 1 };
+    data.entries = {};
+    for (const e of SEED.entries) data.entries[e.id] = Object.assign({ deleted: false, t: 1 }, e);
+    data.dirty = { entries: {}, settings: {} };
+    data.seed = SEED_VERSION;
+    write(DATA_KEY, data);
+  }
   const saveData = () => write(DATA_KEY, data);
   const saveDevice = () => write(DEVICE_KEY, device);
 
@@ -107,6 +133,7 @@
 
     countTo($('#cycleCard'), c.cycle.card, animate);
     countTo($('#cycleUpi'), c.cycle.upi, animate);
+    countTo($('#monthBank'), s.bank, animate);
     $('#whoChip').textContent = cfg['name' + device.owner];
 
     if (sheetName) updateCalcs();
@@ -178,7 +205,7 @@
     countDelay = 0;
     buzz(15);
     floatDelta(n);
-    let msg = money(n) + ' · ' + (method === 'upi' ? 'UPI' : 'Card');
+    let msg = money(n) + ' · ' + METHOD[method];
     if (!wasOver && view.daily.left < 0) msg += ' · over limit';
     toast(msg, () => { setDeleted(e.id, true); toast('Undone'); });
   }
@@ -243,7 +270,7 @@
 
   function entryRow(e) {
     const name = view.cfg['name' + e.who] || '';
-    const pill = e.type === 'pay' ? '<i class="pill pay">Paid</i>' : `<i class="pill ${e.method === 'upi' ? 'upi' : 'card'}">${e.method === 'upi' ? 'UPI' : 'Card'}</i>`;
+    const pill = e.type === 'pay' ? '<i class="pill pay">Paid</i>' : `<i class="pill ${METHOD[e.method] ? e.method : 'card'}">${METHOD[e.method] || 'Card'}</i>`;
     const when = (e.type === 'pay' ? fmtDate(e.date) + ', ' : '') + timeOf(e.ts);
     return `<li>${pill}<span class="meta">${when} · ${esc(name)}</span><b>${money(e.amount)}</b><button class="del" type="button" data-act="del" data-id="${esc(e.id)}" aria-label="Delete">✕</button></li>`;
   }
@@ -345,26 +372,6 @@
           ${moneyField('Unpaid card bill', 'startBill', st.bill)}
         </div>
         <button class="btn ghost wide" type="button" data-act="backup">Download backup</button>`;
-    },
-
-    welcome() {
-      const mk = B.monthOf(B.today());
-      return `<div class="sheet-head"><h2>Welcome to SpendPad</h2></div>
-        <p class="note">Set this up on <b>one</b> phone. On the second phone, tap “Connect to the other phone” instead so you don’t overwrite each other.</p>
-        <div class="group">${textField('Your name', 'name1', '', 'Name')}${moneyField('Your salary', 'salary1', '')}</div>
-        <div class="group">${textField('Friend’s name', 'name2', '', 'Name')}${moneyField('Friend’s salary', 'salary2', '')}</div>
-        <div class="group">${moneyField(monthName(mk) + ' daily limit', 'limit:' + mk, 500)}${moneyField('Emergency fund', 'emergency', 2000)}</div>
-        <h3>Before today</h3>
-        <div class="group">
-          ${moneyField('Spent this month so far', 'startMonthSpent', '')}
-          ${moneyField('Carry into today', 'startCarry', '', { signed: true, hint: '+ saved, − overspent' })}
-          ${moneyField('Card spends this cycle', 'startCycleCard', '', { hint: 'since the 19th' })}
-          ${moneyField('UPI spends this cycle', 'startCycleUpi', '', { hint: 'since the 19th' })}
-          ${moneyField('Unpaid card bill', 'startBill', '', { hint: 'from earlier statements' })}
-        </div>
-        <button class="btn wide" type="button" data-act="start">Start</button>
-        <button class="btn ghost wide" type="button" data-act="join">Connect to the other phone</button>
-        <button class="link" type="button" data-act="skip">Skip for now</button>`;
     },
   };
 
@@ -478,29 +485,6 @@
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     },
-    start() {
-      const pairs = { startDate: B.today() };
-      for (const inp of $$('#sheetBody [data-key]')) {
-        const v = readInput(inp);
-        if (v !== null) pairs[inp.dataset.key] = v;
-      }
-      device.owner = '1';
-      device.welcomed = true;
-      saveDevice();
-      setSettings(pairs);
-      closeSheet();
-      toast('All set');
-    },
-    join() {
-      device.welcomed = true;
-      saveDevice();
-      openSheet('settings');
-    },
-    skip() {
-      device.welcomed = true;
-      saveDevice();
-      closeSheet();
-    },
   };
 
   // ---------- sync with the Google Sheet ----------
@@ -588,14 +572,13 @@
     toast('Logging as ' + view.cfg['name' + device.owner]);
   });
 
-  $('.scrim').addEventListener('click', () => (sheetName === 'welcome' ? ACTIONS.skip() : closeSheet()));
+  $('.scrim').addEventListener('click', () => closeSheet());
   $('#sheetBody').addEventListener('click', ev => {
     const btn = ev.target.closest('[data-act]');
     if (btn) ACTIONS[btn.dataset.act](btn);
   });
   $('#sheetBody').addEventListener('change', ev => {
     const inp = ev.target;
-    if (sheetName === 'welcome') return; // saved together on Start
     if (inp.dataset.key) {
       let v = readInput(inp);
       if (inp.dataset.key === 'statementDay' || inp.dataset.key === 'dueDay') { v = Math.min(31, Math.max(1, v || 1)); inp.value = v; }
@@ -613,14 +596,15 @@
     else ev.target.blur();
   });
 
-  // A hardware keyboard works too: digits, Backspace, Enter/C for Card, U for UPI.
+  // A hardware keyboard works too: digits, Backspace, Enter/C for Card, U for UPI, B for Bank.
   document.addEventListener('keydown', ev => {
-    if (sheetName) { if (ev.key === 'Escape' && sheetName !== 'welcome') closeSheet(); return; }
+    if (sheetName) { if (ev.key === 'Escape') closeSheet(); return; }
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (/^\d$/.test(ev.key)) press(ev.key);
     else if (ev.key === 'Backspace') press('del');
     else if (ev.key === 'Enter' || ev.key === 'c') log('card');
     else if (ev.key === 'u') log('upi');
+    else if (ev.key === 'b') log('bank');
     else return;
     ev.preventDefault();
   });
@@ -638,14 +622,6 @@
   render(false);
   paintAmount();
   paintSync();
-  // A private setup link (…/#setup&name1=…&salary1=…) pre-fills the welcome form.
-  // The part after # never leaves the phone, and it's wiped from the address bar once read.
-  const setup = location.hash.startsWith('#setup') ? new URLSearchParams(location.hash.slice(6)) : null;
-  if (setup) {
-    history.replaceState(null, '', location.pathname + location.search);
-    openSheet('welcome');
-    for (const inp of $$('#sheetBody [data-key]')) if (setup.has(inp.dataset.key)) inp.value = setup.get(inp.dataset.key);
-  } else if (!device.welcomed && !data.settings.startDate) openSheet('welcome');
   syncNow();
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
