@@ -638,7 +638,14 @@
   render(false);
   paintAmount();
   paintSync();
-  if (!device.welcomed && !data.settings.startDate) openSheet('welcome');
+  // A private setup link (…/#setup&name1=…&salary1=…) pre-fills the welcome form.
+  // The part after # never leaves the phone, and it's wiped from the address bar once read.
+  const setup = location.hash.startsWith('#setup') ? new URLSearchParams(location.hash.slice(6)) : null;
+  if (setup) {
+    history.replaceState(null, '', location.pathname + location.search);
+    openSheet('welcome');
+    for (const inp of $$('#sheetBody [data-key]')) if (setup.has(inp.dataset.key)) inp.value = setup.get(inp.dataset.key);
+  } else if (!device.welcomed && !data.settings.startDate) openSheet('welcome');
   syncNow();
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
