@@ -175,3 +175,16 @@ test('alerts: card due soon, overdue, over today, running short', () => {
   // Unpaid after the due date.
   assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-09'), ['card-overdue']);
 });
+
+test('card utilisation against the 30% safe zone', () => {
+  const day = '2026-10-10';
+  const util = cycle => B.compute({ settings: settings({ startDate: day, cardLimit: 80000, safePct: 30, startCycleCard: cycle, salary1: 99999 }), entries: {} }, day);
+  const ok = util(20955);
+  assert.deepEqual([ok.card.util.safe, ok.card.util.room, Math.round(ok.card.util.pct)], [24000, 3045, 26]);
+  assert.deepEqual(B.alerts(ok, day).map(a => a.id), []);
+  const over = util(25000);
+  assert.deepEqual(B.alerts(over, day).map(a => [a.id, a.amount]), [['card-util', 1000]]);
+  // No limit set: nothing to track.
+  assert.equal(B.compute({ settings: settings({ startDate: day, startCycleCard: 99999, salary1: 999999 }), entries: {} }, day).card.util.room < 0, true);
+  assert.deepEqual(B.alerts(B.compute({ settings: settings({ startDate: day, startCycleCard: 99999, salary1: 999999 }), entries: {} }, day), day).map(a => a.id), []);
+});

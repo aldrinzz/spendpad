@@ -31,7 +31,7 @@
   // ---------- settings ----------
   const DEFAULTS = {
     name1: 'Me', name2: 'Friend', salary1: 0, salary2: 0,
-    limit: 500, emergency: 2000, statementDay: 19, dueDay: 8,
+    limit: 500, emergency: 2000, statementDay: 19, dueDay: 8, cardLimit: 0, safePct: 30,
     // What happened before the app was first used.
     startDate: null, startCarry: 0, startMonthSpent: 0, startCycleCard: 0, startCycleUpi: 0, startBill: 0,
   };
@@ -46,7 +46,7 @@
     return {
       name1: v('name1'), name2: v('name2'), salary1: +v('salary1'), salary2: +v('salary2'),
       limits, defaultLimit: DEFAULTS.limit, emergency: +v('emergency'),
-      statementDay: +v('statementDay'), dueDay: +v('dueDay'),
+      statementDay: +v('statementDay'), dueDay: +v('dueDay'), cardLimit: +v('cardLimit'), safePct: +v('safePct'),
       start: {
         date: v('startDate'), carry: +v('startCarry'), monthSpent: +v('startMonthSpent'),
         cycleCard: +v('startCycleCard'), cycleUpi: +v('startCycleUpi'), bill: +v('startBill'),
@@ -131,7 +131,11 @@
     const cycleDue = dueAfter(addDays(cyc.end, 1), cfg.dueDay);
     const next = billLeft > 0 ? { date: billDue, amount: billLeft } : { date: cycleDue, amount: Math.max(0, owed) };
     next.inDays = daysBetween(day, next.date);
+    // Credit utilisation: what's owed against the card limit; staying under safePct helps the credit score.
+    const used = Math.max(0, owed), safe = Math.round(cfg.cardLimit * cfg.safePct / 100);
+    const util = { limit: cfg.cardLimit, safePct: cfg.safePct, safe, used, pct: cfg.cardLimit ? used / cfg.cardLimit * 100 : 0, room: safe - used };
     return {
+      util,
       owed,
       paid,
       credit: Math.max(0, -billLeft),
@@ -171,6 +175,7 @@
     const out = [], c = r.card, d = r.daily, s = r.salary;
     if (c.bill.overdue) out.push({ id: 'card-overdue', level: 'bad', sheet: 'card', amount: c.bill.left, date: c.bill.due, days: c.bill.lateBy });
     else if (c.next.amount > 0 && c.next.inDays <= 3) out.push({ id: 'card-due', level: 'warn', sheet: 'card', amount: c.next.amount, date: c.next.date, days: c.next.inDays });
+    if (c.util.limit && c.util.room < 0) out.push({ id: 'card-util', level: 'bad', sheet: 'card', amount: -c.util.room, pct: c.util.pct, safePct: c.util.safePct });
     if (d.left < 0) out.push({ id: 'over-today', level: 'bad', sheet: 'today', amount: -d.left });
     // Enough salary left for the rest of today plus the daily limit on every remaining day of the month?
     const [y, m] = day.split('-').map(Number);

@@ -120,6 +120,10 @@ input { -webkit-user-select: text; user-select: text; }
 .value { font-size: 21px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile.alert .value, .tile.alert .sub { color: var(--bad); }
+.bar.util { height: 4px; margin: 7px 0 3px; }
+.bar.util i.warn { background: var(--warn); }
+.bar.util i.bad { background: var(--bad); }
+[hidden] { display: none !important; }
 .value.neg { color: var(--bad); }
 
 /* ---------- amount + keypad ---------- */

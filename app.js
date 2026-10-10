@@ -19,6 +19,8 @@
   }
   const monthName = mk => MONTHS[Number(mk.slice(5, 7)) - 1];
   const timeOf = ts => new Date(ts).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  // Whole percent while under the safe line; one decimal once over, so 30.1% never reads as "30%".
+  const pctText = u => (u.room >= 0 ? Math.floor(u.pct) : Math.ceil(u.pct * 10) / 10) + '%';
   const METHOD = { card: 'Card', upi: 'UPI', bank: 'Bank' };
   const inDays = n => (n === 0 ? 'today' : n === 1 ? 'tomorrow' : 'in ' + n + ' days');
   function ago(ts) {
@@ -37,7 +39,10 @@
   function write(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage blocked: keep working in memory */ } }
 
   const data = Object.assign({ entries: {}, settings: {}, dirty: { entries: {}, settings: {} } }, read(DATA_KEY));
+  // The shared Google Sheet's script link. Useless without the sync key, which only the two phones know.
+  const SYNC_URL = 'https://script.google.com/macros/s/AKfycbxncOaIJ4tajl9lpX_0k7XlqT2HOZEF6opALqG0VKam7CxDiDK75SEqpOyMn6Cv0cZx/exec';
   const device = Object.assign({ owner: '1', syncUrl: '', syncKey: '', lastSync: 0, syncError: '' }, read(DEVICE_KEY));
+  if (!device.syncUrl) device.syncUrl = SYNC_URL;
 
   // Starting numbers as of Sat 10 Oct 2026, given by Aldrin. Every phone starts from these,
   // so there is no setup screen. They are stamped t=1, so any later edit (or sync) wins.
@@ -51,6 +56,7 @@
       startMonthSpent: 60085,                     // 73,700 salary - 13,615 left in the bank
       startCycleCard: 13446, startCycleUpi: 7509, // card bill so far: 20,955, due 8 Nov
       startBill: 0,
+      cardLimit: 80000, safePct: 30,              // keep usage under 30% for the credit score
     },
     entries: [{ id: 'seed-1', type: 'spend', amount: 65, method: 'bank', who: '1', date: '2026-10-10', ts: new Date(2026, 9, 10, 12).getTime() }],
   };
@@ -63,6 +69,8 @@
     data.seed = SEED_VERSION;
     write(DATA_KEY, data);
   }
+  // Settings added to the seed later reach phones that were already set up, without a reset.
+  for (const k in SEED.settings) if (!data.settings[k]) data.settings[k] = { v: SEED.settings[k], t: 1 };
   const saveData = () => write(DATA_KEY, data);
   const saveDevice = () => write(DEVICE_KEY, device);
 
@@ -129,6 +137,11 @@
     countTo($('#cardOwed'), c.owed, animate);
     $('#cardDue').textContent = c.bill.overdue ? 'Overdue since ' + fmtDate(c.bill.due) : 'Due ' + fmtDate(c.next.date) + ' · ' + inDays(c.next.inDays);
     $('#cardTile').classList.toggle('alert', c.bill.overdue);
+    const u = c.util, uFrac = u.safe ? u.used / u.safe : 0;
+    $('#utilBar').parentNode.hidden = $('#cardUtil').hidden = !u.limit;
+    $('#utilBar').style.width = Math.min(1, uFrac) * 100 + '%';
+    $('#utilBar').className = uFrac > 1 ? 'bad' : uFrac >= 0.8 ? 'warn' : '';
+    $('#cardUtil').textContent = `${pctText(u)} of limit · ` + (u.room >= 0 ? `${money(u.room)} to ${u.safePct}%` : `${money(-u.room)} over ${u.safePct}%`);
     countTo($('#emerg'), cfg.emergency, animate);
 
     countTo($('#cycleCard'), c.cycle.card, animate);
@@ -151,6 +164,7 @@
   function alertText(a) {
     if (a.id === 'card-overdue') return `Card bill ${money(a.amount)} overdue by ${a.days} day${a.days === 1 ? '' : 's'}`;
     if (a.id === 'card-due') return `Card bill ${money(a.amount)} due ${inDays(a.days)} (${fmtDate(a.date)})`;
+    if (a.id === 'card-util') return `Card at ${pctText({ pct: a.pct, room: -1 })} of limit: pay ${money(a.amount)} to get back under ${a.safePct}%`;
     if (a.id === 'over-today') return `Over today’s limit by ${money(a.amount)}`;
     return `Running short: ${money(a.have)} left, but ${a.daysLeft} days at ${money(a.perDay)} need ${money(a.needed)}`;
   }
@@ -352,6 +366,13 @@
           <div class="pay-row"><input id="payAmount" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="₹ amount paid" autocomplete="off"><button class="btn small" type="button" data-act="pay">Paid</button></div>
           ${pays.length ? `<ul class="list" style="margin-top:8px">${pays.map(entryRow).join('')}</ul>` : ''}
         </div>
+        <h3>Credit limit</h3>
+        <div class="group">
+          ${moneyField('Card limit', 'cardLimit', cfg.cardLimit)}
+          ${dayField('Keep usage under', 'safePct', cfg.safePct, '% of the limit')}
+          <div class="row"><span>Used</span>${calc('utilUsed', 'num')}</div>
+          <div class="row total"><span>Room before ${cfg.safePct}%</span><b class="num">${calc('utilRoom')}</b></div>
+        </div>
         <h3>Billing cycle</h3>
         <div class="group">
           ${dayField('Statement day', 'statementDay', cfg.statementDay, 'new cycle starts')}
@@ -418,6 +439,8 @@
     cycUpi: v => money(v.card.cycle.upi),
     cycDue: v => fmtDate(v.card.cycle.due),
     cycTotal: v => money(v.card.cycle.total),
+    utilUsed: v => `${money(v.card.util.used)} · ${pctText(v.card.util)}`,
+    utilRoom: v => money(v.card.util.room),
     syncStatus: () => syncText(),
   };
   function updateCalcs() {
@@ -509,12 +532,12 @@
 
   function scheduleSync(ms) {
     clearTimeout(syncTimer);
-    if (device.syncUrl) syncTimer = setTimeout(syncNow, ms);
+    if (device.syncUrl && device.syncKey) syncTimer = setTimeout(syncNow, ms);
     paintSync();
   }
 
   async function syncNow() {
-    if (!device.syncUrl || syncBusy) return;
+    if (!device.syncUrl || !device.syncKey || syncBusy) return;
     syncBusy = true;
     paintSync();
     // Copies, so edits made while the request is out are still seen as unsent.
@@ -549,11 +572,12 @@
   }
 
   function paintSync() {
-    const state = !device.syncUrl ? '' : syncBusy ? 'busy' : device.syncError ? 'error' : hasDirty() ? 'pending' : 'ok';
+    const state = !device.syncUrl || !device.syncKey ? '' : syncBusy ? 'busy' : device.syncError ? 'error' : hasDirty() ? 'pending' : 'ok';
     $('#syncDot').className = 'dot ' + state;
   }
   function syncText() {
     if (!device.syncUrl) return 'Not connected. Only this phone has the data.';
+    if (!device.syncKey) return 'Type the sync key to connect the two phones.';
     if (syncBusy) return 'Syncing…';
     if (device.syncError) return device.syncError;
     if (hasDirty()) return 'Waiting to sync';
@@ -605,6 +629,7 @@
     if (inp.dataset.key) {
       let v = readInput(inp);
       if (inp.dataset.key === 'statementDay' || inp.dataset.key === 'dueDay') { v = Math.min(31, Math.max(1, v || 1)); inp.value = v; }
+      if (inp.dataset.key === 'safePct') { v = Math.min(100, Math.max(1, v || 30)); inp.value = v; }
       setSettings({ [inp.dataset.key]: v });
     } else if (inp.dataset.dev) {
       device[inp.dataset.dev] = inp.value.trim();
