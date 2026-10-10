@@ -1,4 +1,4 @@
-# SpendPad
+# LavishTracker
 
 A one-screen daily spending tracker for two people. You add it to your phone's home screen from a web link. No Play Store, no App Store, nothing to pay for. Both phones share one Google Sheet, so you see the same numbers.
 
@@ -21,14 +21,14 @@ Every expense counts against the daily limit, whether it's paid by Card or UPI.
 
 ### 1. Create the shared Google Sheet (about 5 minutes, once)
 
-1. Go to **sheets.new** in the Google account that should hold the data. Name the sheet `SpendPad`.
+1. Go to **sheets.new** in the Google account that should hold the data. Name the sheet `LavishTracker`.
 2. **Extensions → Apps Script**. Delete what's there and paste in all of [`google-sheet/Code.gs`](google-sheet/Code.gs).
 3. Near the top, change `'CHANGE-ME'` to a secret phrase only you two know (for example three random words). Save with ⌘S.
 4. **Deploy → New deployment**. Click the gear next to "Select type" and choose **Web app**:
    - Execute as: **Me**
    - Who has access: **Anyone**
    - Click **Deploy**.
-5. Google asks you to authorise it. Choose your account, then on "Google hasn't verified this app" click **Advanced → Go to SpendPad (unsafe) → Allow**. The warning appears for every personal script. This one only touches this sheet.
+5. Google asks you to authorise it. Choose your account, then on "Google hasn't verified this app" click **Advanced → Go to LavishTracker (unsafe) → Allow**. The warning appears for every personal script. This one only touches this sheet.
 6. Copy the **Web app URL** (it ends in `/exec`). This is the **sync link**.
 7. Optional check: open `<sync link>?key=<your phrase>` in a browser. You should see `{"ok":true,"entries":[],"settings":{}}`.
 

@@ -1,4 +1,4 @@
-/* SpendPad screen: keypad, tiles, sheets, local storage and Google Sheet sync.
+/* LavishTracker screen: keypad, tiles, sheets, local storage and Google Sheet sync.
    All budget maths lives in budget.js. */
 (function () {
   'use strict';
@@ -517,7 +517,7 @@
       const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), entries: data.entries, settings: data.settings }, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'spendpad-backup-' + B.today() + '.json';
+      a.download = 'lavishtracker-backup-' + B.today() + '.json';
       document.body.appendChild(a);
       a.click();
       a.remove();

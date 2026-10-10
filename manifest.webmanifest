@@ -1,6 +1,6 @@
 {
-  "name": "SpendPad",
-  "short_name": "SpendPad",
+  "name": "LavishTracker",
+  "short_name": "LavishTracker",
   "description": "Daily spending tracker for two.",
   "start_url": "./",
   "scope": "./",

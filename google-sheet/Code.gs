@@ -1,5 +1,5 @@
 /**
- * SpendPad sync. Paste this into your Google Sheet: Extensions → Apps Script.
+ * LavishTracker sync. Paste this into your Google Sheet: Extensions → Apps Script.
  * Both phones send their changes here; the sheet keeps every expense and setting,
  * and the newer edit of each one wins. See SETUP.md for the 5-minute setup.
  */
