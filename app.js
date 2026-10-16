@@ -53,8 +53,8 @@
   const SEED = {
     settings: {
       name1: 'Aldrin', salary1: 47400, name2: 'Navs', salary2: 26300,
-      'limit:2026-10': 500, emergency: 2000, statementDay: 19, dueDay: 8,
-      startDate: '2026-10-16', startAt: SEED_AT, startCarry: 0,
+      emergency: 2000, statementDay: 19, dueDay: 8,
+      startDate: '2026-10-16', startAt: SEED_AT,
       startMonthSpent: 64372,                     // 73,700 salary - 9,328 in the bank (Aldrin 6,672 + Navs 2,656.42)
       startCycleCard: 11788, startCycleUpi: 9884, // card bill so far: 21,672.33, generated 19 Oct, due 8 Nov
       startBill: 0,
@@ -156,11 +156,9 @@
     if (sheetName) updateCalcs();
   }
 
-  // "₹500 + ₹100 carried over": the month's limit plus what earlier days left (or minus what they overspent).
+  // "₹7,328 ÷ 16 days = ₹458 a day": the money left this month spread over the days left.
   function breakdownHTML(d) {
-    if (!d.carry) return `Daily limit <b>${money(d.limit)}</b>`;
-    const plus = d.carry > 0;
-    return `<b>${money(d.limit)}</b> ${plus ? '+' : '−'} <b class="${plus ? 'pos' : 'neg'}">${money(Math.abs(d.carry))}</b> ${plus ? 'carried over' : 'overspent'}`;
+    return `<b>${money(d.pool)}</b> ÷ ${d.daysLeft} day${d.daysLeft === 1 ? '' : 's'} = <b>${money(d.limit)}</b> a day`;
   }
 
   // Warnings at the top. ✕ hides one until tomorrow; tapping it opens the matching sheet.
@@ -169,7 +167,7 @@
     if (a.id === 'card-due') return `Card bill ${money(a.amount)} due ${inDays(a.days)} (${fmtDate(a.date)})`;
     if (a.id === 'card-util') return `Card at ${pctText({ pct: a.pct, room: -1 })} of limit: pay ${money(a.amount)} to get back under ${a.safePct}%`;
     if (a.id === 'over-today') return `Over today’s limit by ${money(a.amount)}`;
-    return `Running short: ${money(a.have)} left, but ${a.daysLeft} days at ${money(a.perDay)} need ${money(a.needed)}`;
+    return `This month’s money is used up: ${money(a.amount)} over`;
   }
   function paintAlerts(list, day) {
     const hidden = device.dismissed || {};
@@ -317,7 +315,7 @@
 
   const SHEETS = {
     today() {
-      const d = view.daily, cfg = view.cfg, mk = d.month, nmk = B.shiftMonth(mk, 1);
+      const d = view.daily, mk = d.month;
       const byDay = {};
       for (const e of live('spend')) if (B.monthOf(e.date) === mk) (byDay[e.date] = byDay[e.date] || []).push(e);
       const days = d.history.map(h => dayBlock(h, (byDay[h.date] || []).sort((a, b) => b.ts - a.ts), h.date === view.day)).join('');
@@ -325,12 +323,9 @@
         <div class="group">
           <div class="row"><span>Left today</span><b class="big">${calc('todayLeft')}</b></div>
           <div class="row"><span>Today’s limit</span>${calc('todayAvail', 'num')}</div>
-          <div class="row"><span>Tomorrow</span>${calc('tomorrow', 'num')}</div>
+          <div class="row"><span>Tomorrow (if nothing more today)</span>${calc('tomorrow', 'num')}</div>
         </div>
-        <div class="group">
-          ${moneyField(monthName(mk) + ' daily limit', 'limit:' + mk, B.limitFor(cfg, mk).amount)}
-          ${moneyField(monthName(nmk) + ' daily limit', 'limit:' + nmk, cfg.limits[nmk], { placeholder: 'same', hint: 'Empty keeps ' + monthName(mk) + '’s' })}
-        </div>
+        <p class="note">Each morning: money left this month ÷ days left. Money left is the bank balance minus Card and UPI spends not paid off yet, after keeping the emergency fund aside. Spend less and the coming days get a little more; spend more and they get a little less.</p>
         <h3>${monthName(mk)} so far</h3>
         <div class="group days">${days}</div>`;
     },
@@ -407,7 +402,6 @@
         <p class="note">What happened before you started using the app.</p>
         <div class="group">
           <label class="field"><span>Started on</span><input type="date" data-type="text" data-key="startDate" value="${esc(st.date || '')}"></label>
-          ${moneyField('Carry into first day', 'startCarry', st.carry, { signed: true, hint: '+ saved, − overspent' })}
           ${moneyField('Spent that month before', 'startMonthSpent', st.monthSpent)}
           ${moneyField('Card spends that cycle', 'startCycleCard', st.cycleCard)}
           ${moneyField('UPI spends that cycle', 'startCycleUpi', st.cycleUpi)}
@@ -420,11 +414,10 @@
   // Numbers inside an open sheet, refreshed in place so typing in a field is never interrupted.
   const CALC = {
     todayLeft: v => money(v.daily.left),
-    todayAvail: v => (v.daily.carry ? `${money(v.daily.limit)} ${v.daily.carry > 0 ? '+' : '−'} ${money(Math.abs(v.daily.carry))} = ` : '') + money(v.daily.available),
+    todayAvail: v => `${money(v.daily.pool)} ÷ ${v.daily.daysLeft} = ${money(v.daily.limit)}`,
     tomorrow: v => {
       const t = v.daily.tomorrow;
-      if (t.fresh) return 'fresh start: ' + money(t.limit);
-      return (t.carry ? `${money(t.limit)} ${t.carry > 0 ? '+' : '−'} ${money(Math.abs(t.carry))} = ` : '') + money(t.limit + t.carry);
+      return (t.fresh ? 'new month: ' : '') + `${money(t.pool)} ÷ ${t.daysLeft} = ${money(t.limit)}`;
     },
     salTotal: v => money(v.salary.total),
     salBefore: v => money(-v.salary.before),

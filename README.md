@@ -8,14 +8,13 @@ Open it and the keypad is already there: type the amount, tap **Card** or **UPI*
 
 | What | Rule |
 |---|---|
-| **Daily limit** | Set per month (e.g. ₹500 for October). Set next month's limit from the Daily limit screen whenever you like. If you leave it empty, the previous month's limit carries on. |
-| **Carry-over** | Money you don't spend adds to tomorrow (₹500 + ₹100). Overspending takes away from tomorrow (₹500 − ₹100). It keeps adding up day after day and starts fresh on the 1st of each month. |
+| **Daily limit** | Worked out fresh every morning: money left this month ÷ days left (today included). Money left = bank balance − Card/UPI spends not paid off yet, after keeping the emergency fund aside. Spend less and the coming days get a little more; spend more and they get a little less. The month always ends at ₹0. |
 | **Credit card** | The cycle runs from the 19th to the 18th, and that cycle's bill is due on the 8th of the following month. The screen shows the **last bill** (minus payments you record) and **this cycle** split into Card and UPI on card. On the 19th, this cycle automatically becomes the next bill. Both days can be changed. |
 | **Bank balance** | Works like your bank account: combined salary − Bank spends − card bill payments − emergency fund. Card and UPI-on-card spends leave the bank only when you pay the card bill, so they come off then (never twice). |
 | **Emergency fund** | A fixed amount (₹2,000) kept out of the bank balance. It doesn't touch the daily limit. |
 | **Who spent it** | Each phone remembers whose it is, so every entry is tagged automatically. Tap the name chip to switch. |
 
-Every expense counts against the daily limit, whether it's paid by Card or UPI.
+Every expense counts against the daily limit, whether it's paid by Card, UPI or Bank. Card bill payments don't.
 
 ## Setup
 

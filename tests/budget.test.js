@@ -8,71 +8,60 @@ const pay = (date, amount) => ({ id: 'p' + ++seq, type: 'pay', date, amount, t: 
 const settings = obj => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, { v, t: 1 }]));
 const cfgOf = obj => B.configFrom(settings(obj));
 
-test('leftover carries into tomorrow and shows as limit + carry', () => {
-  const cfg = cfgOf({ 'limit:2026-10': 500, startDate: '2026-10-10' });
-  const d = B.daily(cfg, [spend('2026-10-10', 400)], '2026-10-11');
-  assert.equal(d.limit, 500);
-  assert.equal(d.carry, 100);
-  assert.equal(d.available, 600);
-  assert.equal(d.left, 600);
+// Aldrin's numbers on 16 Oct 2026: 9,328 in the bank, 2,000 kept for emergencies, 16 days left.
+const R = { salary1: 47400, salary2: 26300, emergency: 2000, startDate: '2026-10-16', startMonthSpent: 64372, startCycleCard: 11788, startCycleUpi: 9884 };
+const run = (entries, day, extra) => B.compute({ settings: settings(Object.assign({}, R, extra)), entries: Object.fromEntries(entries.map(e => [e.id, e])) }, day);
+
+test('daily limit = money left ÷ days left', () => {
+  const d = run([], '2026-10-16').daily;
+  assert.deepEqual([d.pool, d.daysLeft, d.limit, d.left], [7328, 16, 458, 458]);
 });
 
-test('overspending takes away from tomorrow', () => {
-  const cfg = cfgOf({ 'limit:2026-10': 500, startDate: '2026-10-10' });
-  const d = B.daily(cfg, [spend('2026-10-10', 600)], '2026-10-11');
-  assert.equal(d.carry, -100);
-  assert.equal(d.available, 400);
+test("today's spends come off today's limit; tomorrow spreads what's left over the remaining days", () => {
+  const d = run([spend('2026-10-16', 300, 'bank')], '2026-10-16').daily;
+  assert.equal(d.left, 158);
+  assert.deepEqual([d.tomorrow.pool, d.tomorrow.daysLeft, d.tomorrow.limit], [7028, 15, 468]);
+  // Spend nothing and tomorrow rises: 7,328 ÷ 15.
+  assert.equal(run([], '2026-10-17').daily.limit, 488);
+  // Overspend and every remaining day drops: (7,328 − 1,500) ÷ 15.
+  assert.equal(run([spend('2026-10-16', 1500, 'bank')], '2026-10-17').daily.limit, 388);
 });
 
-test('carry keeps adding up day by day, including no-spend days', () => {
-  const cfg = cfgOf({ 'limit:2026-10': 500, startDate: '2026-10-10' });
-  const entries = [spend('2026-10-10', 400), spend('2026-10-11', 300)]; // +100, +200, then the 12th untouched (+500)
-  const d = B.daily(cfg, entries, '2026-10-13');
-  assert.equal(d.carry, 800);
-  assert.equal(d.available, 1300);
+test('a card or UPI spend lowers the money left just like a bank spend', () => {
+  for (const method of ['card', 'upi', 'bank']) {
+    assert.equal(run([spend('2026-10-16', 300, method)], '2026-10-17').daily.pool, 7028, method);
+  }
+  // …but only the bank spend has left the bank so far.
+  assert.equal(run([spend('2026-10-16', 300, 'card')], '2026-10-17').salary.left, 7328);
 });
 
-test("today's spends come off what's left today", () => {
-  const cfg = cfgOf({ 'limit:2026-10': 500, startDate: '2026-10-10' });
-  const d = B.daily(cfg, [spend('2026-10-10', 120, 'card'), spend('2026-10-10', 80, 'upi')], '2026-10-10');
-  assert.equal(d.spent, 200);
-  assert.equal(d.left, 300);
+test('paying off a card spend does not lower the money left a second time', () => {
+  const spendOnly = run([spend('2026-10-17', 300, 'card')], '2026-10-18').daily.pool;
+  const spendAndPay = run([spend('2026-10-17', 300, 'card'), pay('2026-10-17', 21672), pay('2026-10-17', 300)], '2026-10-18').daily.pool;
+  // The 21,672 bill from before the app is real money leaving the bank; the extra 300 just settles the new spend.
+  assert.equal(spendOnly, 7028);
+  assert.equal(spendAndPay, 7028 - 21672);
 });
 
-test('carry resets on the 1st and the new month limit applies', () => {
-  const cfg = cfgOf({ 'limit:2026-10': 500, 'limit:2026-11': 600, startDate: '2026-10-30' });
-  const d = B.daily(cfg, [spend('2026-10-30', 100), spend('2026-10-31', 100)], '2026-11-01');
-  assert.equal(d.carry, 0);
-  assert.equal(d.available, 600);
+test('history shows each day: spent of that day\'s limit', () => {
+  const d = run([spend('2026-10-16', 300, 'bank'), spend('2026-10-17', 100, 'card')], '2026-10-18').daily;
+  assert.deepEqual(d.history.map(h => [h.date, h.limit, h.spent]), [
+    ['2026-10-18', Math.floor(6928 / 14), 0], ['2026-10-17', 468, 100], ['2026-10-16', 458, 300],
+  ]);
 });
 
-test('a month without its own limit uses the previous one', () => {
-  const cfg = cfgOf({ 'limit:2026-10': 500 });
-  assert.deepEqual(B.limitFor(cfg, '2026-11'), { amount: 500, set: false });
-  assert.equal(B.daily(cfg, [], '2026-11-01').available, 500);
-});
-
-test('tomorrow preview: carries within the month, fresh at month end', () => {
-  const cfg = cfgOf({ 'limit:2026-10': 500, 'limit:2026-11': 450, startDate: '2026-10-10' });
-  const mid = B.daily(cfg, [spend('2026-10-10', 400)], '2026-10-10');
-  assert.deepEqual([mid.tomorrow.limit, mid.tomorrow.carry, mid.tomorrow.fresh], [500, 100, false]);
-  const end = B.daily(cfg, [], '2026-10-31');
-  assert.deepEqual([end.tomorrow.limit, end.tomorrow.carry, end.tomorrow.fresh], [450, 0, true]);
-});
-
-test('starting carry applies on the first tracked day only', () => {
-  const cfg = cfgOf({ 'limit:2026-10': 500, startDate: '2026-10-10', startCarry: 300 });
-  assert.equal(B.daily(cfg, [], '2026-10-10').available, 800);
-  assert.equal(B.daily(cfg, [], '2026-10-11').available, 1300);
-  assert.equal(B.daily(cfg, [], '2026-11-01').available, 500);
+test('a new month starts from the salary, and the last day previews it', () => {
+  const nov = run([], '2026-11-01').daily;
+  assert.deepEqual([nov.pool, nov.daysLeft, nov.limit], [71700, 30, 2390]);
+  assert.equal(run([], '2026-10-31').daily.tomorrow.fresh, true);
 });
 
 test('deleted and future-dated spends are ignored', () => {
   const data = {
-    settings: settings({ 'limit:2026-10': 500, startDate: '2026-10-10' }),
+    settings: settings({ startDate: '2026-10-10', salary1: 22000, emergency: 0 }),
     entries: { a: Object.assign(spend('2026-10-10', 200), { id: 'a', deleted: true }), b: Object.assign(spend('2026-10-11', 50), { id: 'b' }) },
   };
-  assert.equal(B.compute(data, '2026-10-10').daily.left, 500);
+  assert.equal(B.compute(data, '2026-10-10').daily.left, 1000); // 22,000 ÷ 22 days, untouched
 });
 
 test('card cycle runs 19th to 18th and the bill is due on the 8th', () => {
@@ -157,29 +146,27 @@ test('merge keeps the newer edit of each entry and setting', () => {
 
 test('bank payments count for the day and the salary, never the card', () => {
   const data = {
-    settings: settings({ 'limit:2026-10': 500, startDate: '2026-10-10', salary1: 1000, emergency: 0 }),
-    entries: { a: Object.assign(spend('2026-10-10', 65, 'bank'), { id: 'a' }), b: Object.assign(spend('2026-10-10', 100, 'card'), { id: 'b' }) },
+    settings: settings({ startDate: '2026-10-22', salary1: 1000, emergency: 0 }),
+    entries: { a: Object.assign(spend('2026-10-22', 65, 'bank'), { id: 'a' }), b: Object.assign(spend('2026-10-22', 100, 'card'), { id: 'b' }) },
   };
-  const r = B.compute(data, '2026-10-10');
-  assert.equal(r.daily.left, 335);
+  const r = B.compute(data, '2026-10-22');
+  assert.equal(r.daily.left, 100 - 165); // 1,000 ÷ 10 days left
   assert.equal(r.salary.left, 935); // only the bank spend; the card spend leaves the bank when the bill is paid
   assert.equal(r.salary.bank, 65);
   assert.deepEqual([r.card.cycle.card, r.card.cycle.upi, r.card.owed], [100, 0, 100]);
 });
 
-test('alerts: card due soon, overdue, over today, running short', () => {
-  const base = { 'limit:2026-10': 500, emergency: 0, startDate: '2026-10-10' };
+test('alerts: card due soon, overdue, over today, no money left', () => {
+  const base = { emergency: 0, startDate: '2026-10-16' };
   const ids = (obj, entries, day) => { const data = { settings: settings(obj), entries: Object.fromEntries(entries.map(e => [e.id, e])) }; return B.alerts(B.compute(data, day), day).map(a => a.id); };
-  // Plenty of salary, nothing due soon: no alerts. (22 days x 500 = 11,000 needed.)
-  assert.deepEqual(ids({ ...base, salary1: 11000, startCycleCard: 1000 }, [], '2026-10-10'), []);
-  // One rupee short for the month.
-  assert.deepEqual(ids({ ...base, salary1: 10999 }, [], '2026-10-10'), ['short']);
-  // Over today's limit.
-  assert.deepEqual(ids({ ...base, salary1: 99999 }, [spend('2026-10-10', 600)], '2026-10-10'), ['over-today']);
-  // Card bill due in 3 days (cycle closed 18 Oct, due 8 Nov).
+  assert.deepEqual(ids({ ...base, salary1: 8000, startCycleCard: 1000 }, [], '2026-10-16'), []);
+  // Over today's limit (8,000 ÷ 16 = 500).
+  assert.deepEqual(ids({ ...base, salary1: 8000 }, [spend('2026-10-16', 600)], '2026-10-16'), ['over-today']);
+  // The month's money is gone.
+  assert.deepEqual(ids({ ...base, salary1: 8000 }, [spend('2026-10-16', 8100)], '2026-10-17'), ['over-today', 'short']);
+  // Card bill due in 3 days (cycle closed 18 Oct, due 8 Nov), then overdue.
   assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-05'), ['card-due']);
   assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-04'), []);
-  // Unpaid after the due date.
   assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-09'), ['card-overdue']);
 });
 
@@ -199,7 +186,7 @@ test('card utilisation against the 30% safe zone', () => {
 test('entries logged before the starting numbers were taken are ignored', () => {
   const at = Date.parse('2026-10-16T12:00:00');
   const data = {
-    settings: settings({ 'limit:2026-10': 500, startDate: '2026-10-16', startAt: at, startCycleCard: 1000, salary1: 10000, emergency: 0 }),
+    settings: settings({ startDate: '2026-10-16', startAt: at, startCycleCard: 1000, salary1: 8000, emergency: 0 }),
     entries: {
       old: Object.assign(spend('2026-10-16', 300, 'bank'), { id: 'old', ts: at - 60000 }),
       older: Object.assign(spend('2026-10-12', 999, 'card'), { id: 'older', ts: at - 4 * 86400000 }),
@@ -207,7 +194,7 @@ test('entries logged before the starting numbers were taken are ignored', () => 
     },
   };
   const r = B.compute(data, '2026-10-16');
-  assert.equal(r.daily.left, 450);
-  assert.equal(r.salary.left, 9950);
+  assert.equal(r.daily.left, 450); // 8,000 ÷ 16 = 500, minus the 50 logged after the reset
+  assert.equal(r.salary.left, 7950);
   assert.equal(r.card.owed, 1000);
 });

@@ -31,7 +31,7 @@
   // ---------- settings ----------
   const DEFAULTS = {
     name1: 'Me', name2: 'Friend', salary1: 0, salary2: 0,
-    limit: 500, emergency: 2000, statementDay: 19, dueDay: 8, cardLimit: 0, safePct: 30,
+    emergency: 2000, statementDay: 19, dueDay: 8, cardLimit: 0, safePct: 30,
     // What happened before the app was first used.
     startDate: null, startAt: 0, startCarry: 0, startMonthSpent: 0, startCycleCard: 0, startCycleUpi: 0, startBill: 0,
   };
@@ -39,13 +39,9 @@
   // settings is { key: { v, t } } as stored and synced; this flattens it to plain values.
   function configFrom(settings) {
     const v = k => { const s = settings[k]; return s && s.v != null && s.v !== '' ? s.v : DEFAULTS[k]; };
-    const limits = {};
-    for (const k in settings) {
-      if (k.startsWith('limit:') && settings[k].v != null && settings[k].v !== '') limits[k.slice(6)] = Number(settings[k].v);
-    }
     return {
       name1: v('name1'), name2: v('name2'), salary1: +v('salary1'), salary2: +v('salary2'),
-      limits, defaultLimit: DEFAULTS.limit, emergency: +v('emergency'),
+      emergency: +v('emergency'),
       statementDay: +v('statementDay'), dueDay: +v('dueDay'), cardLimit: +v('cardLimit'), safePct: +v('safePct'),
       start: {
         date: v('startDate'), at: +v('startAt'), carry: +v('startCarry'), monthSpent: +v('startMonthSpent'),
@@ -54,38 +50,58 @@
     };
   }
 
-  // A month without its own limit uses the latest earlier month's limit.
-  function limitFor(cfg, mk) {
-    if (cfg.limits[mk] != null) return { amount: cfg.limits[mk], set: true };
-    const earlier = Object.keys(cfg.limits).filter(k => k < mk).sort().pop();
-    return { amount: earlier ? cfg.limits[earlier] : cfg.defaultLimit, set: false };
+  // ---------- daily limit ----------
+  // Each morning: money left this month ÷ days left (today included). Spend less and every
+  // remaining day rises a little; spend more and they all drop. The month always ends at ₹0.
+  //
+  // Money left = bank balance (salary − Bank spends − card bills paid − emergency fund)
+  //            − Card/UPI spends that haven't been paid off yet,
+  // so a card spend lowers it straight away and the bill payment doesn't lower it again.
+  // Payments go first towards the card debt that existed when the month (or the app) started.
+  function moneyLeft(cfg, entries, d) {
+    const mk = monthOf(d), st = cfg.start;
+    const inStart = !!st.date && monthOf(st.date) === mk;
+    const from = inStart ? st.date : mk + '-01';
+    let bankOut = 0, paid = 0, onCard = 0;
+    for (const e of entries) {
+      if (e.date < from || e.date >= d) continue; // only what happened before day d
+      if (e.type === 'pay') paid += e.amount;
+      else if (e.type === 'spend' && e.method === 'bank') bankOut += e.amount;
+      else if (e.type === 'spend') onCard += e.amount;
+    }
+    const debtBefore = inStart ? st.bill + st.cycleCard + st.cycleUpi : Math.max(0, card(cfg, entries, addDays(from, -1)).owed);
+    const unpaidNew = Math.max(0, onCard - Math.max(0, paid - debtBefore));
+    const bank = cfg.salary1 + cfg.salary2 - (inStart ? st.monthSpent : 0) - cfg.emergency - bankOut - paid;
+    return bank - unpaidNew;
   }
 
-  // ---------- daily limit ----------
-  // Each day gets the month's limit plus whatever the previous day left (or minus what it overspent).
-  // The running carry starts fresh on the 1st of every month.
-  function daily(cfg, entries, day) {
-    const mk = monthOf(day);
-    const limit = limitFor(cfg, mk).amount;
-    const st = cfg.start;
-    let from = mk + '-01', carry = 0;
-    if (st.date && monthOf(st.date) === mk && st.date <= day) { from = st.date; carry = st.carry; }
+  function daysLeftIn(d) {
+    const [y, m] = parts(d);
+    return daysBetween(d, ymd(y, m, daysInMonth(y, m))) + 1;
+  }
 
+  function limitOn(cfg, entries, d) {
+    const pool = moneyLeft(cfg, entries, d), daysLeft = daysLeftIn(d);
+    return { pool, daysLeft, limit: Math.floor(pool / daysLeft) };
+  }
+
+  function daily(cfg, entries, day) {
+    const mk = monthOf(day), st = cfg.start;
+    let from = st.date && monthOf(st.date) === mk ? st.date : mk + '-01';
+    if (from > day) from = day;
     const spentOn = {};
     for (const e of entries) {
       if (e.type === 'spend' && e.date >= from && e.date <= day) spentOn[e.date] = (spentOn[e.date] || 0) + e.amount;
     }
     const history = [];
     for (let d = from; d <= day; d = addDays(d, 1)) {
-      const available = limit + carry, spent = spentOn[d] || 0;
-      history.push({ date: d, limit, carry, available, spent, left: available - spent });
-      carry = available - spent;
+      const l = limitOn(cfg, entries, d), spent = spentOn[d] || 0;
+      history.push({ date: d, pool: l.pool, daysLeft: l.daysLeft, limit: l.limit, available: l.limit, spent, left: l.limit - spent });
     }
     const now = history[history.length - 1];
     const next = addDays(day, 1);
-    const tomorrow = monthOf(next) === mk
-      ? { date: next, limit, carry: now.left, fresh: false }
-      : { date: next, limit: limitFor(cfg, monthOf(next)).amount, carry: 0, fresh: true };
+    const t = limitOn(cfg, entries, next);
+    const tomorrow = { date: next, pool: t.pool, daysLeft: t.daysLeft, limit: t.limit, fresh: monthOf(next) !== mk };
     return Object.assign({ month: mk, history: history.reverse(), tomorrow }, now);
   }
 
@@ -178,11 +194,8 @@
     else if (c.next.amount > 0 && c.next.inDays <= 3) out.push({ id: 'card-due', level: 'warn', sheet: 'card', amount: c.next.amount, date: c.next.date, days: c.next.inDays });
     if (c.util.limit && c.util.room < 0) out.push({ id: 'card-util', level: 'bad', sheet: 'card', amount: -c.util.room, pct: c.util.pct, safePct: c.util.safePct });
     if (d.left < 0) out.push({ id: 'over-today', level: 'bad', sheet: 'today', amount: -d.left });
-    // Enough salary left for the rest of today plus the daily limit on every remaining day of the month?
-    const [y, m] = day.split('-').map(Number);
-    const daysAfter = daysBetween(day, ymd(y, m, daysInMonth(y, m)));
-    const needed = Math.max(0, d.left) + d.limit * daysAfter;
-    if (s.left < needed) out.push({ id: 'short', level: 'warn', sheet: 'salary', amount: needed - s.left, needed, have: s.left, perDay: d.limit, daysLeft: daysAfter + 1 });
+    // The formula always stretches what's left over the remaining days, so the only shortfall is none left at all.
+    if (d.pool <= 0) out.push({ id: 'short', level: 'bad', sheet: 'today', amount: -d.pool });
     return out;
   }
 
@@ -204,7 +217,7 @@
 
   const api = {
     DEFAULTS, today, addDays, daysBetween, monthOf, shiftMonth,
-    configFrom, limitFor, cycleOf, dueAfter, daily, card, salary, compute, alerts, merge,
+    configFrom, cycleOf, moneyLeft, dueAfter, daily, card, salary, compute, alerts, merge,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Budget = api;
