@@ -32,19 +32,25 @@
   const DEFAULTS = {
     name1: 'Me', name2: 'Friend', salary1: 0, salary2: 0,
     emergency: 2000, statementDay: 19, dueDay: 8, cardLimit: 0, safePct: 30,
-    // What happened before the app was first used.
-    startDate: null, startAt: 0, startCarry: 0, startMonthSpent: 0, startCycleCard: 0, startCycleUpi: 0, startBill: 0,
+    fixed: [], // monthly fixed costs, [{ name, amount }], taken off on the 1st of every month after the start month
+    // Where things stood when the app was first used. startBank (the bank balance that day) wins over startMonthSpent.
+    startDate: null, startAt: 0, startBank: null, startMonthSpent: 0, startCycleCard: 0, startCycleUpi: 0, startBill: 0,
   };
 
   // settings is { key: { v, t } } as stored and synced; this flattens it to plain values.
   function configFrom(settings) {
     const v = k => { const s = settings[k]; return s && s.v != null && s.v !== '' ? s.v : DEFAULTS[k]; };
+    // 'emergency:2026-11' sets one month's emergency fund; months without one use the latest earlier one.
+    const emergencies = {};
+    for (const k in settings) if (k.startsWith('emergency:') && settings[k].v != null && settings[k].v !== '') emergencies[k.slice(10)] = +settings[k].v;
+    const fixed = (Array.isArray(v('fixed')) ? v('fixed') : []).filter(f => f && typeof f === 'object').map(f => ({ name: String(f.name || ''), amount: Math.max(0, +f.amount || 0) }));
     return {
+      emergencies, fixed,
       name1: v('name1'), name2: v('name2'), salary1: +v('salary1'), salary2: +v('salary2'),
       emergency: +v('emergency'),
       statementDay: +v('statementDay'), dueDay: +v('dueDay'), cardLimit: +v('cardLimit'), safePct: +v('safePct'),
       start: {
-        date: v('startDate'), at: +v('startAt'), carry: +v('startCarry'), monthSpent: +v('startMonthSpent'),
+        date: v('startDate'), at: +v('startAt'), bank: v('startBank') == null ? null : +v('startBank'), monthSpent: +v('startMonthSpent'),
         cycleCard: +v('startCycleCard'), cycleUpi: +v('startCycleUpi'), bill: +v('startBill'),
       },
     };
@@ -58,21 +64,51 @@
   //            − Card/UPI spends that haven't been paid off yet,
   // so a card spend lowers it straight away and the bill payment doesn't lower it again.
   // Payments go first towards the card debt that existed when the month (or the app) started.
-  function moneyLeft(cfg, entries, d) {
-    const mk = monthOf(d), st = cfg.start;
+  function emergencyFor(cfg, mk) {
+    if (cfg.emergencies[mk] != null) return cfg.emergencies[mk];
+    const earlier = Object.keys(cfg.emergencies).filter(k => k < mk).sort().pop();
+    return earlier ? cfg.emergencies[earlier] : cfg.emergency;
+  }
+
+  // How a month opens. The start month opens on the bank balance Aldrin gave; every later month
+  // opens on the salaries minus the fixed costs, and keeps aside whatever card debt is still unpaid.
+  function monthOpen(cfg, entries, mk) {
+    const st = cfg.start;
     const inStart = !!st.date && monthOf(st.date) === mk;
+    const salary = cfg.salary1 + cfg.salary2;
+    const fixed = inStart ? 0 : cfg.fixed.reduce((n, f) => n + f.amount, 0);
     const from = inStart ? st.date : mk + '-01';
-    let bankOut = 0, paid = 0, onCard = 0;
+    return {
+      inStart, from, salary, fixed,
+      opening: inStart ? (st.bank != null ? st.bank : salary - st.monthSpent) : salary - fixed,
+      emergency: emergencyFor(cfg, mk),
+      debtBefore: inStart ? st.bill + st.cycleCard + st.cycleUpi : Math.max(0, card(cfg, entries, addDays(from, -1)).owed),
+    };
+  }
+
+  // Totals for the month from its first tracked day up to (but not including) `until`.
+  function monthTotals(entries, from, until) {
+    const t = { bankOut: 0, paid: 0, onCard: 0, byWho: { 1: 0, 2: 0 } };
     for (const e of entries) {
-      if (e.date < from || e.date >= d) continue; // only what happened before day d
-      if (e.type === 'pay') paid += e.amount;
-      else if (e.type === 'spend' && e.method === 'bank') bankOut += e.amount;
-      else if (e.type === 'spend') onCard += e.amount;
+      if (e.date < from || e.date >= until) continue;
+      if (e.type === 'pay') t.paid += e.amount;
+      else if (e.type === 'spend' && e.method === 'bank') { t.bankOut += e.amount; t.byWho[e.who] = (t.byWho[e.who] || 0) + e.amount; }
+      else if (e.type === 'spend') t.onCard += e.amount;
     }
-    const debtBefore = inStart ? st.bill + st.cycleCard + st.cycleUpi : Math.max(0, card(cfg, entries, addDays(from, -1)).owed);
-    const unpaidNew = Math.max(0, onCard - Math.max(0, paid - debtBefore));
-    const bank = cfg.salary1 + cfg.salary2 - (inStart ? st.monthSpent : 0) - cfg.emergency - bankOut - paid;
-    return bank - unpaidNew;
+    return t;
+  }
+
+  // Money left at the start of day d = bank balance − card debt that's being kept aside.
+  // In the start month only new card spends are kept aside (payments go to the old bill first),
+  // which matches how Aldrin worked out the first ₹458. From the next month all unpaid card debt is.
+  function moneyLeft(cfg, entries, d) {
+    const o = monthOpen(cfg, entries, monthOf(d));
+    const t = monthTotals(entries, o.from, d);
+    const bank = o.opening - o.emergency - t.bankOut - t.paid;
+    const unpaid = o.inStart
+      ? Math.max(0, t.onCard - Math.max(0, t.paid - o.debtBefore))
+      : Math.max(0, o.debtBefore + t.onCard - t.paid);
+    return bank - unpaid;
   }
 
   function daysLeftIn(d) {
@@ -165,18 +201,14 @@
   // Works like the bank account: combined salary - Bank spends - card bill payments - emergency fund.
   // Card and UPI-on-card spends leave the bank only when the card bill is paid, so they aren't taken off twice.
   function salary(cfg, entries, day) {
-    const mk = monthOf(day);
-    const byWho = { 1: 0, 2: 0 };
-    let bank = 0, paid = 0, onCard = 0, before = 0;
-    for (const e of entries) {
-      if (monthOf(e.date) !== mk || e.date > day) continue;
-      if (e.type === 'pay') paid += e.amount;
-      else if (e.type === 'spend' && e.method === 'bank') { bank += e.amount; byWho[e.who] = (byWho[e.who] || 0) + e.amount; }
-      else if (e.type === 'spend') onCard += e.amount;
-    }
-    if (cfg.start.date && monthOf(cfg.start.date) === mk) before = cfg.start.monthSpent;
-    const total = cfg.salary1 + cfg.salary2;
-    return { total, s1: cfg.salary1, s2: cfg.salary2, before, bank, paid, onCard, byWho, emergency: cfg.emergency, left: total - before - bank - paid - cfg.emergency };
+    const o = monthOpen(cfg, entries, monthOf(day));
+    const t = monthTotals(entries, o.from, addDays(day, 1));
+    return {
+      total: o.salary, s1: cfg.salary1, s2: cfg.salary2, inStart: o.inStart, opening: o.opening, startDate: o.from,
+      fixed: o.fixed, fixedList: o.inStart ? [] : cfg.fixed, emergency: o.emergency,
+      bank: t.bankOut, paid: t.paid, onCard: t.onCard, byWho: t.byWho,
+      left: o.opening - o.emergency - t.bankOut - t.paid,
+    };
   }
 
   function compute(data, day) {
@@ -217,7 +249,7 @@
 
   const api = {
     DEFAULTS, today, addDays, daysBetween, monthOf, shiftMonth,
-    configFrom, cycleOf, moneyLeft, dueAfter, daily, card, salary, compute, alerts, merge,
+    configFrom, cycleOf, moneyLeft, emergencyFor, dueAfter, daily, card, salary, compute, alerts, merge,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Budget = api;

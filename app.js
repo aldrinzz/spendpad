@@ -55,10 +55,13 @@
       name1: 'Aldrin', salary1: 47400, name2: 'Navs', salary2: 26300,
       emergency: 2000, statementDay: 19, dueDay: 8,
       startDate: '2026-10-16', startAt: SEED_AT,
-      startMonthSpent: 64372,                     // 73,700 salary - 9,328 in the bank (Aldrin 6,672 + Navs 2,656.42)
+      startBank: 9328,                            // in the bank on 16 Oct: Aldrin 6,672 + Navs 2,656.42
+      startMonthSpent: 64372,                     // same thing for older app versions: 73,700 salary - 9,328
       startCycleCard: 11788, startCycleUpi: 9884, // card bill so far: 21,672.33, generated 19 Oct, due 8 Nov
       startBill: 0,
       cardLimit: 80000, safePct: 30,              // keep usage under 30% for the credit score
+      'emergency:2026-11': 5000,                  // emergency fund from November
+      fixed: [{ name: 'Hostel fees', amount: 14000 }, { name: 'Bike EMI', amount: 7280 }, { name: 'Wifi', amount: 489 }],
     },
   };
   if (data.seed !== SEED_VERSION) {
@@ -145,7 +148,7 @@
     $('#utilBar').style.width = Math.min(1, uFrac) * 100 + '%';
     $('#utilBar').className = uFrac > 1 ? 'bad' : uFrac >= 0.8 ? 'warn' : '';
     $('#cardUtil').textContent = `${pctText(u)} of limit · ` + (u.room >= 0 ? `${money(u.room)} to ${u.safePct}%` : `${money(-u.room)} over ${u.safePct}%`);
-    countTo($('#emerg'), cfg.emergency, animate);
+    countTo($('#emerg'), s.emergency, animate);
 
     countTo($('#cycleCard'), c.cycle.card, animate);
     countTo($('#cycleUpi'), c.cycle.upi, animate);
@@ -331,20 +334,34 @@
     },
 
     salary() {
-      const cfg = view.cfg;
+      const cfg = view.cfg, s = view.salary, nmk = B.shiftMonth(view.daily.month, 1);
+      const fixedRows = cfg.fixed.map((f, i) => `<div class="field fixed-row">
+          <input class="text" type="text" data-fixed="${i}" data-field="name" value="${esc(f.name)}" placeholder="Name" autocomplete="off">
+          <span class="money-in"><input type="text" inputmode="numeric" pattern="[0-9]*" data-fixed="${i}" data-field="amount" value="${esc(f.amount)}" placeholder="0" autocomplete="off"></span>
+          <button class="del" type="button" data-act="fixedDel" data-i="${i}" aria-label="Remove">✕</button></div>`).join('');
       return head('Bank balance') + `
-        <div class="group">${textField('Name', 'name1', cfg.name1)}${moneyField('Salary', 'salary1', cfg.salary1)}</div>
-        <div class="group">${textField('Name', 'name2', cfg.name2)}${moneyField('Salary', 'salary2', cfg.salary2)}</div>
         <div class="group">
-          <div class="row"><span>Combined salary</span>${calc('salTotal', 'num')}</div>
-          <div class="row"><span>Spent before the app</span>${calc('salBefore', 'num neg')}</div>
+          ${s.inStart
+            ? `<div class="row"><span>In the bank on ${fmtDate(s.startDate)}</span>${calc('salOpening', 'num')}</div>`
+            : `<div class="row"><span>Combined salary</span>${calc('salTotal', 'num')}</div>
+               <div class="row"><span>Fixed costs</span>${calc('salFixed', 'num neg')}</div>`}
           <div class="row"><span>Bank spends this month</span>${calc('salBank', 'num neg')}</div>
           <div class="row small">${calc('salWho')}</div>
           <div class="row"><span>Card bills paid this month</span>${calc('salPaid', 'num neg')}</div>
           <div class="row"><span>Emergency set aside</span>${calc('salEmerg', 'num neg')}</div>
           <div class="row total"><span>Bank balance</span><b class="big">${calc('salLeft')}</b></div>
         </div>
-        <p class="note">Card and UPI spends (${calc('salOnCard')} this month) leave the bank when you pay the card bill, so they come off here only then.</p>`;
+        <p class="note">Card and UPI spends (${calc('salOnCard')} this month) leave the bank when you pay the card bill, so they come off here only then.</p>
+        <h3>Salaries</h3>
+        <div class="group">${textField('Name', 'name1', cfg.name1)}${moneyField('Salary', 'salary1', cfg.salary1)}</div>
+        <div class="group">${textField('Name', 'name2', cfg.name2)}${moneyField('Salary', 'salary2', cfg.salary2)}</div>
+        <h3>Fixed monthly costs</h3>
+        <div class="group">
+          ${fixedRows || '<p class="empty-note">None yet</p>'}
+          <div class="row total"><span>Total, taken off on the 1st</span><b class="num">${calc('fixedTotal')}</b></div>
+        </div>
+        <button class="btn ghost wide" type="button" data-act="fixedAdd">Add a fixed cost</button>
+        <p class="note">From ${monthName(nmk)}, each month starts from both salaries minus these, so don’t log them as Bank spends too.${s.inStart ? ' This month runs on the bank balance you started with.' : ''}</p>`;
     },
 
     card() {
@@ -382,9 +399,13 @@
     },
 
     emergency() {
+      const cfg = view.cfg, mk = view.daily.month, nmk = B.shiftMonth(mk, 1);
       return head('Emergency fund') + `
-        <div class="group">${moneyField('Set aside', 'emergency', view.cfg.emergency)}</div>
-        <p class="note">Taken out of the bank balance. It doesn’t touch the daily limit.</p>`;
+        <div class="group">
+          ${moneyField(monthName(mk), 'emergency:' + mk, B.emergencyFor(cfg, mk))}
+          ${moneyField(monthName(nmk) + ' onwards', 'emergency:' + nmk, B.emergencyFor(cfg, nmk))}
+        </div>
+        <p class="note">Kept aside: taken out of the bank balance and the money the daily limit is worked out from.</p>`;
     },
 
     settings() {
@@ -402,7 +423,7 @@
         <p class="note">What happened before you started using the app.</p>
         <div class="group">
           <label class="field"><span>Started on</span><input type="date" data-type="text" data-key="startDate" value="${esc(st.date || '')}"></label>
-          ${moneyField('Spent that month before', 'startMonthSpent', st.monthSpent)}
+          ${moneyField('In the bank that day', 'startBank', st.bank)}
           ${moneyField('Card spends that cycle', 'startCycleCard', st.cycleCard)}
           ${moneyField('UPI spends that cycle', 'startCycleUpi', st.cycleUpi)}
           ${moneyField('Unpaid card bill', 'startBill', st.bill)}
@@ -420,7 +441,9 @@
       return (t.fresh ? 'new month: ' : '') + `${money(t.pool)} ÷ ${t.daysLeft} = ${money(t.limit)}`;
     },
     salTotal: v => money(v.salary.total),
-    salBefore: v => money(-v.salary.before),
+    salOpening: v => money(v.salary.opening),
+    salFixed: v => money(-v.salary.fixed),
+    fixedTotal: v => money(v.cfg.fixed.reduce((n, f) => n + f.amount, 0)),
     salBank: v => money(-v.salary.bank),
     salWho: v => `${v.cfg.name1} ${money(v.salary.byWho[1] || 0)} · ${v.cfg.name2} ${money(v.salary.byWho[2] || 0)}`,
     salPaid: v => money(-v.salary.paid),
@@ -487,6 +510,16 @@
 
   const ACTIONS = {
     close: () => closeSheet(),
+    fixedAdd() {
+      setSettings({ fixed: view.cfg.fixed.concat({ name: '', amount: 0 }) });
+      refreshSheet();
+      const rows = $$('#sheetBody [data-field="name"]');
+      if (rows.length) rows[rows.length - 1].focus();
+    },
+    fixedDel(btn) {
+      setSettings({ fixed: view.cfg.fixed.filter((f, i) => i !== +btn.dataset.i) });
+      refreshSheet();
+    },
     del(btn) {
       if (!btn.classList.contains('confirm')) {
         btn.classList.add('confirm');
@@ -633,6 +666,13 @@
       if (inp.dataset.key === 'statementDay' || inp.dataset.key === 'dueDay') { v = Math.min(31, Math.max(1, v || 1)); inp.value = v; }
       if (inp.dataset.key === 'safePct') { v = Math.min(100, Math.max(1, v || 30)); inp.value = v; }
       setSettings({ [inp.dataset.key]: v });
+    } else if (inp.dataset.fixed) {
+      // Rebuild the list from every row, so an unfinished new row (no amount yet) isn't lost.
+      const list = Array.from($$('#sheetBody [data-field="name"]'), el => {
+        const amt = $(`#sheetBody [data-fixed="${el.dataset.fixed}"][data-field="amount"]`);
+        return { name: el.value.trim(), amount: Math.abs(Math.round(Number(amt.value.replace(/[^\d]/g, '')) || 0)) };
+      });
+      setSettings({ fixed: list });
     } else if (inp.dataset.dev) {
       device[inp.dataset.dev] = inp.value.trim();
       device.syncError = '';
