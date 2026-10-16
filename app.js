@@ -343,7 +343,8 @@
         <div class="group">
           ${s.inStart
             ? `<div class="row"><span>In the bank on ${fmtDate(s.startDate)}</span>${calc('salOpening', 'num')}</div>`
-            : `<div class="row"><span>Combined salary</span>${calc('salTotal', 'num')}</div>
+            : `<div class="row"><span>Left over from ${monthName(B.shiftMonth(view.daily.month, -1))}</span>${calc('salCarried', 'num')}</div>
+               <div class="row"><span>Combined salary</span>${calc('salTotal', 'num')}</div>
                <div class="row"><span>Fixed costs</span>${calc('salFixed', 'num neg')}</div>`}
           <div class="row"><span>Bank spends this month</span>${calc('salBank', 'num neg')}</div>
           <div class="row small">${calc('salWho')}</div>
@@ -361,7 +362,7 @@
           <div class="row total"><span>Total, taken off on the 1st</span><b class="num">${calc('fixedTotal')}</b></div>
         </div>
         <button class="btn ghost wide" type="button" data-act="fixedAdd">Add a fixed cost</button>
-        <p class="note">From ${monthName(nmk)}, each month starts from both salaries minus these, so don’t log them as Bank spends too.${s.inStart ? ' This month runs on the bank balance you started with.' : ''}</p>`;
+        <p class="note">From ${monthName(nmk)}, each month starts from what’s left in the bank plus both salaries, minus these, so don’t log them as Bank spends too.${s.inStart ? ' This month runs on the bank balance you started with.' : ''}</p>`;
     },
 
     card() {
@@ -442,6 +443,7 @@
     },
     salTotal: v => money(v.salary.total),
     salOpening: v => money(v.salary.opening),
+    salCarried: v => money(v.salary.carried),
     salFixed: v => money(-v.salary.fixed),
     fixedTotal: v => money(v.cfg.fixed.reduce((n, f) => n + f.amount, 0)),
     salBank: v => money(-v.salary.bank),

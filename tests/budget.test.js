@@ -50,19 +50,28 @@ test('history shows each day: spent of that day\'s limit', () => {
   ]);
 });
 
-test('November: salary − emergency − fixed costs − unpaid card debt, ÷ days', () => {
+test('November: October’s leftover + salary − fixed costs − emergency − unpaid card debt, ÷ days', () => {
   const nov = { 'emergency:2026-11': 5000, fixed: [{ name: 'Hostel', amount: 14000 }, { name: 'Bike EMI', amount: 7280 }, { name: 'Wifi', amount: 489 }] };
+  // Nothing spent in October: 9,328 carried + 73,700 − 21,769 = 61,259 in the bank;
+  // minus 5,000 emergency and the 21,672 card bill still unpaid = 34,587 over 30 days.
   const d = run([], '2026-11-01', nov).daily;
-  // 73,700 − 5,000 − 21,769 − 21,672 card bill still unpaid = 25,259 over 30 days.
-  assert.deepEqual([d.pool, d.daysLeft, d.limit], [25259, 30, 841]);
+  assert.deepEqual([d.pool, d.daysLeft, d.limit], [34587, 30, 1152]);
   // Paying the card bill doesn't change it (it was already kept aside) …
-  assert.equal(run([pay('2026-11-05', 21672)], '2026-11-06', nov).daily.pool, 25259);
+  assert.equal(run([pay('2026-11-05', 21672)], '2026-11-06', nov).daily.pool, 34587);
   // … but it does leave the bank.
-  assert.equal(run([], '2026-11-06', nov).salary.left, 73700 - 21769 - 5000);
-  assert.equal(run([pay('2026-11-05', 21672)], '2026-11-06', nov).salary.left, 73700 - 21769 - 5000 - 21672);
+  assert.equal(run([], '2026-11-06', nov).salary.left, 61259 - 5000);
+  assert.equal(run([pay('2026-11-05', 21672)], '2026-11-06', nov).salary.left, 61259 - 5000 - 21672);
   // A card spend in November lowers it right away, and paying that off later doesn't again.
-  assert.equal(run([spend('2026-11-02', 400, 'card')], '2026-11-03', nov).daily.pool, 25259 - 400);
-  assert.equal(run([spend('2026-11-02', 400, 'card'), pay('2026-11-02', 22072)], '2026-11-03', nov).daily.pool, 25259 - 400);
+  assert.equal(run([spend('2026-11-02', 400, 'card')], '2026-11-03', nov).daily.pool, 34587 - 400);
+  assert.equal(run([spend('2026-11-02', 400, 'card'), pay('2026-11-02', 22072)], '2026-11-03', nov).daily.pool, 34587 - 400);
+  // Spend October's daily limits from the bank and only the emergency fund carries: 2,000 + 73,700 − 21,769.
+  assert.equal(run([spend('2026-10-20', 7328, 'bank')], '2026-11-01', nov).salary.opening, 2000 + 73700 - 21769);
+  // Spend it on the card instead: the bank keeps it, but the card debt kept aside grows by the same amount.
+  assert.equal(run([spend('2026-10-20', 7328, 'card')], '2026-11-01', nov).daily.pool, 34587 - 7328);
+  // Overspend October and November starts smaller.
+  assert.equal(run([spend('2026-10-20', 10000, 'bank')], '2026-11-01', nov).salary.carried, 9328 - 10000);
+  // It keeps rolling: December gets what November left in the bank (nothing logged, so all of it).
+  assert.equal(run([], '2026-12-01', nov).salary.carried, 61259);
   // October still runs on its own numbers (₹2,000 emergency, no fixed costs).
   assert.equal(run([], '2026-10-16', nov).daily.pool, 7328);
   assert.equal(run([], '2026-10-31', nov).daily.tomorrow.fresh, true);
@@ -71,7 +80,7 @@ test('November: salary − emergency − fixed costs − unpaid card debt, ÷ da
 test('changing a salary moves the next month, not the start month', () => {
   const extra = { salary1: 50000, startBank: 9328 };
   assert.equal(run([], '2026-10-16', extra).daily.pool, 7328);
-  assert.equal(run([], '2026-11-01', extra).salary.left, 50000 + 26300 - 2000);
+  assert.equal(run([], '2026-11-01', extra).salary.left, 9328 + 50000 + 26300 - 2000);
 });
 
 test('emergency fund per month: a month without one uses the latest earlier one', () => {
@@ -151,8 +160,8 @@ test('bank balance = opening balance − bank spends − card bill payments − 
   assert.equal(B.salary(cfg, entries, '2026-10-10').left, 76000 - 500 - 2000);
   // The start day's bank balance, when given, is used as is.
   assert.equal(B.salary(cfgOf({ salary1: 1, startDate: '2026-10-10', startBank: 9328, emergency: 2000 }), [], '2026-10-10').left, 7328);
-  // November: salary, no fixed costs set here.
-  assert.equal(B.salary(cfg, entries, '2026-11-01').left, 78000);
+  // November: October's leftover (76,000 − 500 − 5,000) carries over, plus the salary.
+  assert.equal(B.salary(cfg, entries, '2026-11-01').left, 70500 + 80000 - 2000);
 });
 
 test('merge keeps the newer edit of each entry and setting', () => {

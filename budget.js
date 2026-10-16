@@ -70,17 +70,25 @@
     return earlier ? cfg.emergencies[earlier] : cfg.emergency;
   }
 
-  // How a month opens. The start month opens on the bank balance Aldrin gave; every later month
-  // opens on the salaries minus the fixed costs, and keeps aside whatever card debt is still unpaid.
+  // How a month opens. The start month opens on the bank balance Aldrin gave. Every later month opens on
+  // whatever was left in the bank at the end of the month before (emergency fund included, since it never
+  // left), plus both salaries, minus the fixed costs; it then keeps aside its own emergency fund and the
+  // card debt that's still unpaid.
   function monthOpen(cfg, entries, mk) {
     const st = cfg.start;
     const inStart = !!st.date && monthOf(st.date) === mk;
     const salary = cfg.salary1 + cfg.salary2;
     const fixed = inStart ? 0 : cfg.fixed.reduce((n, f) => n + f.amount, 0);
     const from = inStart ? st.date : mk + '-01';
+    let carried = 0;
+    if (!inStart && st.date && monthOf(st.date) < mk) {
+      const prev = monthOpen(cfg, entries, shiftMonth(mk, -1));
+      const t = monthTotals(entries, prev.from, from);
+      carried = prev.opening - t.bankOut - t.paid;
+    }
     return {
-      inStart, from, salary, fixed,
-      opening: inStart ? (st.bank != null ? st.bank : salary - st.monthSpent) : salary - fixed,
+      inStart, from, salary, fixed, carried,
+      opening: inStart ? (st.bank != null ? st.bank : salary - st.monthSpent) : carried + salary - fixed,
       emergency: emergencyFor(cfg, mk),
       debtBefore: inStart ? st.bill + st.cycleCard + st.cycleUpi : Math.max(0, card(cfg, entries, addDays(from, -1)).owed),
     };
@@ -204,7 +212,7 @@
     const o = monthOpen(cfg, entries, monthOf(day));
     const t = monthTotals(entries, o.from, addDays(day, 1));
     return {
-      total: o.salary, s1: cfg.salary1, s2: cfg.salary2, inStart: o.inStart, opening: o.opening, startDate: o.from,
+      total: o.salary, s1: cfg.salary1, s2: cfg.salary2, inStart: o.inStart, opening: o.opening, carried: o.carried, startDate: o.from,
       fixed: o.fixed, fixedList: o.inStart ? [] : cfg.fixed, emergency: o.emergency,
       bank: t.bankOut, paid: t.paid, onCard: t.onCard, byWho: t.byWho,
       left: o.opening - o.emergency - t.bankOut - t.paid,
