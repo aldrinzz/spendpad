@@ -145,22 +145,22 @@
     };
   }
 
-  // ---------- salary ----------
-  // Left this month = combined salary - everything spent this month (Card, UPI and Bank) - emergency fund.
+  // ---------- bank balance ----------
+  // Works like the bank account: combined salary - Bank spends - card bill payments - emergency fund.
+  // Card and UPI-on-card spends leave the bank only when the card bill is paid, so they aren't taken off twice.
   function salary(cfg, entries, day) {
     const mk = monthOf(day);
     const byWho = { 1: 0, 2: 0 };
-    let spent = 0, before = 0, bank = 0;
+    let bank = 0, paid = 0, onCard = 0, before = 0;
     for (const e of entries) {
-      if (e.type !== 'spend' || monthOf(e.date) !== mk || e.date > day) continue;
-      spent += e.amount;
-      byWho[e.who] = (byWho[e.who] || 0) + e.amount;
-      if (e.method === 'bank') bank += e.amount;
+      if (monthOf(e.date) !== mk || e.date > day) continue;
+      if (e.type === 'pay') paid += e.amount;
+      else if (e.type === 'spend' && e.method === 'bank') { bank += e.amount; byWho[e.who] = (byWho[e.who] || 0) + e.amount; }
+      else if (e.type === 'spend') onCard += e.amount;
     }
     if (cfg.start.date && monthOf(cfg.start.date) === mk) before = cfg.start.monthSpent;
-    spent += before;
     const total = cfg.salary1 + cfg.salary2;
-    return { total, s1: cfg.salary1, s2: cfg.salary2, spent, byWho, before, bank, emergency: cfg.emergency, left: total - spent - cfg.emergency };
+    return { total, s1: cfg.salary1, s2: cfg.salary2, before, bank, paid, onCard, byWho, emergency: cfg.emergency, left: total - before - bank - paid - cfg.emergency };
   }
 
   function compute(data, day) {

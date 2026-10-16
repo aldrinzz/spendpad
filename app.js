@@ -132,7 +132,7 @@
 
     countTo($('#salaryLeft'), s.left, animate);
     $('#salaryLeft').classList.toggle('neg', s.left < 0);
-    $('#salaryTotal').innerHTML = `of <b>${money(s.total)}</b><br>${esc(cfg.name1)} <b>${money(s.s1)}</b> + ${esc(cfg.name2)} <b>${money(s.s2)}</b>`;
+    $('#salaryTotal').innerHTML = `salary <b>${money(s.total)}</b><br>${esc(cfg.name1)} <b>${money(s.s1)}</b> + ${esc(cfg.name2)} <b>${money(s.s2)}</b>`;
 
     countTo($('#cardOwed'), c.owed, animate);
     $('#cardDue').textContent = c.bill.overdue ? 'Overdue since ' + fmtDate(c.bill.due) : 'Due ' + fmtDate(c.next.date) + ' · ' + inDays(c.next.inDays);
@@ -334,16 +334,19 @@
 
     salary() {
       const cfg = view.cfg;
-      return head('Salary') + `
+      return head('Bank balance') + `
         <div class="group">${textField('Name', 'name1', cfg.name1)}${moneyField('Salary', 'salary1', cfg.salary1)}</div>
         <div class="group">${textField('Name', 'name2', cfg.name2)}${moneyField('Salary', 'salary2', cfg.salary2)}</div>
         <div class="group">
           <div class="row"><span>Combined salary</span>${calc('salTotal', 'num')}</div>
-          <div class="row"><span>Spent this month</span>${calc('salSpent', 'num neg')}</div>
+          <div class="row"><span>Spent before the app</span>${calc('salBefore', 'num neg')}</div>
+          <div class="row"><span>Bank spends this month</span>${calc('salBank', 'num neg')}</div>
           <div class="row small">${calc('salWho')}</div>
+          <div class="row"><span>Card bills paid this month</span>${calc('salPaid', 'num neg')}</div>
           <div class="row"><span>Emergency set aside</span>${calc('salEmerg', 'num neg')}</div>
-          <div class="row total"><span>Left this month</span><b class="big">${calc('salLeft')}</b></div>
-        </div>`;
+          <div class="row total"><span>Bank balance</span><b class="big">${calc('salLeft')}</b></div>
+        </div>
+        <p class="note">Card and UPI spends (${calc('salOnCard')} this month) leave the bank when you pay the card bill, so they come off here only then.</p>`;
     },
 
     card() {
@@ -383,7 +386,7 @@
     emergency() {
       return head('Emergency fund') + `
         <div class="group">${moneyField('Set aside', 'emergency', view.cfg.emergency)}</div>
-        <p class="note">Taken out of “salary left”. It doesn’t touch the daily limit.</p>`;
+        <p class="note">Taken out of the bank balance. It doesn’t touch the daily limit.</p>`;
     },
 
     settings() {
@@ -421,8 +424,11 @@
       return (t.carry ? `${money(t.limit)} ${t.carry > 0 ? '+' : '−'} ${money(Math.abs(t.carry))} = ` : '') + money(t.limit + t.carry);
     },
     salTotal: v => money(v.salary.total),
-    salSpent: v => money(-v.salary.spent),
-    salWho: v => `${v.cfg.name1} ${money(v.salary.byWho[1] || 0)} · ${v.cfg.name2} ${money(v.salary.byWho[2] || 0)}` + (v.salary.before ? ` · before app ${money(v.salary.before)}` : ''),
+    salBefore: v => money(-v.salary.before),
+    salBank: v => money(-v.salary.bank),
+    salWho: v => `${v.cfg.name1} ${money(v.salary.byWho[1] || 0)} · ${v.cfg.name2} ${money(v.salary.byWho[2] || 0)}`,
+    salPaid: v => money(-v.salary.paid),
+    salOnCard: v => money(v.salary.onCard),
     salEmerg: v => money(-v.salary.emergency),
     salLeft: v => money(v.salary.left),
     cardOwed: v => money(v.card.owed),

@@ -124,15 +124,22 @@ test('card: paying more than the bill shows as credit', () => {
   assert.equal(c.owed, 300);
 });
 
-test('salary left = combined - spent this month - emergency', () => {
+test('bank balance = salary - bank spends - card bill payments - emergency', () => {
   const cfg = cfgOf({ salary1: 50000, salary2: 30000, emergency: 2000, startDate: '2026-10-10', startMonthSpent: 4000 });
-  const entries = [spend('2026-10-10', 300, 'card', '1'), spend('2026-10-10', 200, 'upi', '2'), spend('2026-09-30', 999)];
-  const s = B.salary(cfg, entries, '2026-10-10');
+  const entries = [
+    spend('2026-10-10', 300, 'bank', '1'), spend('2026-10-10', 200, 'bank', '2'),
+    spend('2026-10-10', 900, 'card'), spend('2026-10-10', 100, 'upi'), // on the card: not out of the bank yet
+    pay('2026-10-11', 5000),                                            // the bill payment is what leaves the bank
+    spend('2026-09-30', 999, 'bank'),
+  ];
+  const s = B.salary(cfg, entries, '2026-10-11');
   assert.equal(s.total, 80000);
-  assert.equal(s.spent, 4500);
+  assert.deepEqual([s.before, s.bank, s.paid, s.onCard], [4000, 500, 5000, 1000]);
   assert.deepEqual([s.byWho[1], s.byWho[2]], [300, 200]);
-  assert.equal(s.left, 73500);
-  // November: the pre-app spend no longer counts
+  assert.equal(s.left, 80000 - 4000 - 500 - 5000 - 2000);
+  // The day before the payment it hasn't left the bank yet.
+  assert.equal(B.salary(cfg, entries, '2026-10-10').left, 80000 - 4000 - 500 - 2000);
+  // November: the pre-app figure no longer counts.
   assert.equal(B.salary(cfg, entries, '2026-11-01').left, 78000);
 });
 
@@ -155,7 +162,7 @@ test('bank payments count for the day and the salary, never the card', () => {
   };
   const r = B.compute(data, '2026-10-10');
   assert.equal(r.daily.left, 335);
-  assert.equal(r.salary.left, 835);
+  assert.equal(r.salary.left, 935); // only the bank spend; the card spend leaves the bank when the bill is paid
   assert.equal(r.salary.bank, 65);
   assert.deepEqual([r.card.cycle.card, r.card.cycle.upi, r.card.owed], [100, 0, 100]);
 });
