@@ -33,7 +33,7 @@
     name1: 'Me', name2: 'Friend', salary1: 0, salary2: 0,
     limit: 500, emergency: 2000, statementDay: 19, dueDay: 8, cardLimit: 0, safePct: 30,
     // What happened before the app was first used.
-    startDate: null, startCarry: 0, startMonthSpent: 0, startCycleCard: 0, startCycleUpi: 0, startBill: 0,
+    startDate: null, startAt: 0, startCarry: 0, startMonthSpent: 0, startCycleCard: 0, startCycleUpi: 0, startBill: 0,
   };
 
   // settings is { key: { v, t } } as stored and synced; this flattens it to plain values.
@@ -48,7 +48,7 @@
       limits, defaultLimit: DEFAULTS.limit, emergency: +v('emergency'),
       statementDay: +v('statementDay'), dueDay: +v('dueDay'), cardLimit: +v('cardLimit'), safePct: +v('safePct'),
       start: {
-        date: v('startDate'), carry: +v('startCarry'), monthSpent: +v('startMonthSpent'),
+        date: v('startDate'), at: +v('startAt'), carry: +v('startCarry'), monthSpent: +v('startMonthSpent'),
         cycleCard: +v('startCycleCard'), cycleUpi: +v('startCycleUpi'), bill: +v('startBill'),
       },
     };
@@ -165,7 +165,8 @@
 
   function compute(data, day) {
     const cfg = configFrom(data.settings);
-    const entries = Object.values(data.entries).filter(e => !e.deleted);
+    // Anything logged before the starting numbers were taken is already inside them.
+    const entries = Object.values(data.entries).filter(e => !e.deleted && !(cfg.start.at && e.ts < cfg.start.at));
     return { cfg, daily: daily(cfg, entries, day), card: card(cfg, entries, day), salary: salary(cfg, entries, day) };
   }
 

@@ -44,28 +44,31 @@
   const device = Object.assign({ owner: '1', syncUrl: '', syncKey: '', lastSync: 0, syncError: '' }, read(DEVICE_KEY));
   if (!device.syncUrl) device.syncUrl = SYNC_URL;
 
-  // Starting numbers as of Sat 10 Oct 2026, given by Aldrin. Every phone starts from these,
-  // so there is no setup screen. They are stamped t=1, so any later edit (or sync) wins.
-  // Changing SEED_VERSION resets every phone to the seed the next time the app opens.
-  const SEED_VERSION = 1;
+  // Starting numbers as of Fri 16 Oct 2026, given by Aldrin. Every phone starts from these,
+  // so there is no setup screen. Changing SEED_VERSION resets every phone to the seed the next
+  // time the app opens: the seed is stamped at SEED_AT, so it outranks older edits in the Google
+  // Sheet, and entries logged before SEED_AT are ignored (they're inside the starting numbers).
+  const SEED_VERSION = 2;
+  const SEED_AT = 1792163965000; // 16 Oct 2026, when these numbers were given
   const SEED = {
     settings: {
       name1: 'Aldrin', salary1: 47400, name2: 'Navs', salary2: 26300,
       'limit:2026-10': 500, emergency: 2000, statementDay: 19, dueDay: 8,
-      startDate: '2026-10-10', startCarry: 0,
-      startMonthSpent: 60085,                     // 73,700 salary - 13,615 left in the bank
-      startCycleCard: 13446, startCycleUpi: 7509, // card bill so far: 20,955, due 8 Nov
+      startDate: '2026-10-16', startAt: SEED_AT, startCarry: 0,
+      startMonthSpent: 64372,                     // 73,700 salary - 9,328 in the bank (Aldrin 6,672 + Navs 2,656.42)
+      startCycleCard: 11788, startCycleUpi: 9884, // card bill so far: 21,672.33, generated 19 Oct, due 8 Nov
       startBill: 0,
       cardLimit: 80000, safePct: 30,              // keep usage under 30% for the credit score
     },
-    entries: [{ id: 'seed-1', type: 'spend', amount: 65, method: 'bank', who: '1', date: '2026-10-10', ts: new Date(2026, 9, 10, 12).getTime() }],
   };
   if (data.seed !== SEED_VERSION) {
     data.settings = {};
-    for (const k in SEED.settings) data.settings[k] = { v: SEED.settings[k], t: 1 };
     data.entries = {};
-    for (const e of SEED.entries) data.entries[e.id] = Object.assign({ deleted: false, t: 1 }, e);
     data.dirty = { entries: {}, settings: {} };
+    for (const k in SEED.settings) {
+      data.settings[k] = { v: SEED.settings[k], t: SEED_AT };
+      data.dirty.settings[k] = true; // pushed to the Google Sheet so it resets too
+    }
     data.seed = SEED_VERSION;
     write(DATA_KEY, data);
   }

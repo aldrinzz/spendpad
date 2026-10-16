@@ -195,3 +195,19 @@ test('card utilisation against the 30% safe zone', () => {
   assert.equal(B.compute({ settings: settings({ startDate: day, startCycleCard: 99999, salary1: 999999 }), entries: {} }, day).card.util.room < 0, true);
   assert.deepEqual(B.alerts(B.compute({ settings: settings({ startDate: day, startCycleCard: 99999, salary1: 999999 }), entries: {} }, day), day).map(a => a.id), []);
 });
+
+test('entries logged before the starting numbers were taken are ignored', () => {
+  const at = Date.parse('2026-10-16T12:00:00');
+  const data = {
+    settings: settings({ 'limit:2026-10': 500, startDate: '2026-10-16', startAt: at, startCycleCard: 1000, salary1: 10000, emergency: 0 }),
+    entries: {
+      old: Object.assign(spend('2026-10-16', 300, 'bank'), { id: 'old', ts: at - 60000 }),
+      older: Object.assign(spend('2026-10-12', 999, 'card'), { id: 'older', ts: at - 4 * 86400000 }),
+      now: Object.assign(spend('2026-10-16', 50, 'bank'), { id: 'now', ts: at + 60000 }),
+    },
+  };
+  const r = B.compute(data, '2026-10-16');
+  assert.equal(r.daily.left, 450);
+  assert.equal(r.salary.left, 9950);
+  assert.equal(r.card.owed, 1000);
+});
