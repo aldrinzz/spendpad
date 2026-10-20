@@ -195,7 +195,9 @@ test('alerts: card due soon, overdue, over today, no money left', () => {
   // Over today's limit (8,000 ÷ 16 = 500).
   assert.deepEqual(ids({ ...base, salary1: 8000 }, [spend('2026-10-16', 600)], '2026-10-16'), ['over-today']);
   // The month's money is gone.
-  assert.deepEqual(ids({ ...base, salary1: 8000 }, [spend('2026-10-16', 8100)], '2026-10-17'), ['over-today', 'short']);
+  // The month's money is gone. Nothing was spent on the 17th itself, so only "money used up" shows.
+  assert.deepEqual(ids({ ...base, salary1: 8000 }, [spend('2026-10-16', 8100)], '2026-10-17'), ['short']);
+  assert.deepEqual(ids({ ...base, salary1: 8000 }, [spend('2026-10-16', 8100), spend('2026-10-17', 50)], '2026-10-17'), ['over-today', 'short']);
   // Card bill due in 3 days (cycle closed 18 Oct, due 8 Nov), then overdue.
   assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-05'), ['card-due']);
   assert.deepEqual(ids({ ...base, salary1: 99999, startCycleCard: 1000 }, [], '2026-11-04'), []);

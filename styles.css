@@ -236,7 +236,10 @@ input { -webkit-user-select: text; user-select: text; }
 .field > span { flex: 1; min-width: 0; }
 .field small { display: block; font-size: 12px; color: var(--muted); }
 .fixed-row input.text { flex: 1; min-width: 0; width: auto; text-align: left; }
-.fixed-row .money-in input { width: 110px; }
+.fixed-row { gap: 8px; }
+.fixed-row .money-in { flex: 0 1 100px; min-width: 0; }
+.fixed-row .money-in input { width: 100%; min-width: 0; }
+@media (max-width: 380px) { .fixed-row .via { min-width: 50px; padding: 0 8px; } }
 .field.col { flex-direction: column; align-items: stretch; gap: 6px; }
 .field.col > span { font-size: 13px; color: var(--muted); }
 .field input, .pay-row input {
@@ -280,6 +283,11 @@ input { -webkit-user-select: text; user-select: text; }
 .pill.upi { background: var(--upi); }
 .pill.pay { background: var(--good); }
 .pill.bank { background: var(--bank); }
+.pill.fee { background: var(--warn); }
+.fixed-row .via { flex: none; min-width: 58px; height: 38px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 700; text-align: center; color: #fff; background: var(--bank); }
+.fixed-row .via.card { background: var(--card); }
+.btn.grow { flex: 1; }
+.seg + .note { margin-top: 10px; }
 .list .note-btn { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; }
 .list .note-text { display: block; color: var(--ink); font-weight: 600; font-size: 13px; }
 .list .note-add { display: block; color: var(--hi); font-size: 12.5px; font-weight: 600; }

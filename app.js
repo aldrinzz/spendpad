@@ -57,7 +57,7 @@
       startDate: '2026-10-16', startAt: SEED_AT,
       startBank: 9328,                            // in the bank on 16 Oct: Aldrin 6,672 + Navs 2,656.42
       startMonthSpent: 64372,                     // same thing for older app versions: 73,700 salary - 9,328
-      startCycleCard: 11788, startCycleUpi: 9884, // card bill so far: 21,672.33, generated 19 Oct, due 8 Nov
+      startCycleCard: 12138, startCycleUpi: 9884, // card spends that cycle; with the 17-18 Oct spends the 19 Oct statement is 27,275, due 8 Nov
       startBill: 0,
       cardLimit: 80000, safePct: 30,              // keep usage under 30% for the credit score
       'emergency:2026-11': 5000,                  // emergency fund from November
@@ -82,6 +82,10 @@
     data.seed = SEED_VERSION;
     write(DATA_KEY, data);
   }
+  // Corrections to starting numbers already on phones: applied once, only if the old value is untouched.
+  // 20 Oct: the real 19 Oct statement is 27,275, ₹350 more than the app had, from before the 16 Oct start.
+  const s0 = data.settings.startCycleCard;
+  if (s0 && s0.v === 11788 && s0.t === SEED_AT) { data.settings.startCycleCard = { v: 12138, t: Date.now() }; data.dirty.settings.startCycleCard = true; write(DATA_KEY, data); }
   // Settings added to the seed later reach phones that were already set up, without a reset.
   for (const k in SEED.settings) if (!data.settings[k]) data.settings[k] = { v: SEED.settings[k], t: 1 };
   const saveData = () => write(DATA_KEY, data);
@@ -124,6 +128,7 @@
     changed();
   }
   function changed() {
+    rev++;
     saveData();
     render(true);
     scheduleSync(800);
@@ -157,10 +162,12 @@
 
     countTo($('#salaryLeft'), s.left, animate);
     $('#salaryLeft').classList.toggle('neg', s.left < 0);
-    $('#salaryTotal').innerHTML = `salary <b>${money(s.total)}</b><br>${esc(cfg.name1)} <b>${money(s.s1)}</b> + ${esc(cfg.name2)} <b>${money(s.s2)}</b>`;
+    $('#salaryTotal').innerHTML = s.inStart
+      ? `started with <b>${money(s.opening)}</b> on ${fmtDate(s.startDate)}<br>salaries from 1 ${monthName(d.nextMonth.month).slice(0, 3)}`
+      : `salary <b>${money(s.total)}</b><br>${esc(cfg.name1)} <b>${money(s.s1)}</b> + ${esc(cfg.name2)} <b>${money(s.s2)}</b>`;
 
     countTo($('#cardOwed'), c.owed, animate);
-    $('#cardDue').textContent = c.bill.overdue ? 'Overdue since ' + fmtDate(c.bill.due) : 'Due ' + fmtDate(c.next.date) + ' · ' + inDays(c.next.inDays);
+    $('#cardDue').textContent = c.bill.overdue ? 'Overdue since ' + fmtDate(c.bill.overdueSince) : 'Due ' + fmtDate(c.next.date) + ' · ' + inDays(c.next.inDays);
     $('#cardTile').classList.toggle('alert', c.bill.overdue);
     const u = c.util, uFrac = u.safe ? u.used / u.safe : 0;
     $('#utilBar').parentNode.hidden = $('#cardUtil').hidden = !u.limit;
@@ -175,7 +182,7 @@
     $('#whoChip').textContent = cfg['name' + device.owner];
     paintAlerts(B.alerts(view, day), day);
 
-    if (sheetName) updateCalcs();
+    if (sheetName) keepSheetFresh();
   }
 
   // "₹7,328 ÷ 16 days = ₹458 a day": the money left this month spread over the days left.
@@ -189,7 +196,7 @@
     if (a.id === 'card-due') return `Card bill ${money(a.amount)} due ${inDays(a.days)} (${fmtDate(a.date)})`;
     if (a.id === 'card-util') return `Card at ${pctText({ pct: a.pct, room: -1 })} of limit: pay ${money(a.amount)} to get back under ${a.safePct}%`;
     if (a.id === 'over-today') return `Over today’s limit by ${money(a.amount)}`;
-    return `This month’s money is used up: ${money(a.amount)} over`;
+    return a.amount > 0 ? `This month’s money is used up: ${money(a.amount)} over` : 'This month’s money is used up';
   }
   function paintAlerts(list, day) {
     const hidden = device.dismissed || {};
@@ -388,6 +395,10 @@
 
   function entryRow(e) {
     const name = view.cfg['name' + e.who] || '';
+    if (e.type === 'adj') {
+      const fee = e.amount >= 0;
+      return `<li><i class="pill ${fee ? 'fee' : 'pay'}">${fee ? 'Fee' : 'Refund'}</i><span class="meta">${fmtDate(e.date)}, ${timeOf(e.ts)} · ${esc(name)}${e.note ? `<span class="note-text">${esc(e.note)}</span>` : ''}</span><b>${fee ? '+' : '−'}${money(Math.abs(e.amount))}</b><button class="del" type="button" data-act="del" data-id="${esc(e.id)}" aria-label="Delete">✕</button></li>`;
+    }
     const pill = e.type === 'pay' ? '<i class="pill pay">Paid</i>' : `<i class="pill ${METHOD[e.method] ? e.method : 'card'}">${METHOD[e.method] || 'Card'}</i>`;
     const when = (e.type === 'pay' ? fmtDate(e.date) + ', ' : '') + timeOf(e.ts);
     const note = e.type === 'spend'
@@ -406,9 +417,44 @@
     return `<details${isToday ? ' open' : ''}><summary><span class="d">${isToday ? 'Today' : fmtDate(h.date, true)}</span><span class="num">${money(h.spent)} of ${money(h.available)}</span>${tag}</summary><ul class="list">${items}</ul></details>`;
   }
 
-  const live = type => Object.values(data.entries).filter(e => !e.deleted && e.type === type);
+  const live = type => view.entries.filter(e => e.type === type);
 
   let noteTarget = null, noteReturn = null; // entry being given a note, and the sheet to go back to
+
+  // The card bill that existed when the app was started (paid from the next month's money).
+  const oldBill = () => { const st = view.cfg.start; return st.bill + st.cycleCard + st.cycleUpi; };
+  // Salaries and fixed costs are edited for this month or from next month on (next by default).
+  // In the start month only "from next month" exists: October runs on the bank balance it started with.
+  let editWhen = 'next';
+  const editTarget = () => {
+    const mk = view.daily.month;
+    return view.salary.inStart || editWhen === 'next' ? B.shiftMonth(mk, 1) : mk;
+  };
+  // The statement day now in force (changes are dated, so bills already made keep theirs).
+  const statementDayNow = () => {
+    const ch = view.cfg.statementChanges || [];
+    return ch.length ? ch[ch.length - 1].day : view.cfg.statementDay;
+  };
+  // Editing only this month must not change next month: if next month has no amount of its own yet,
+  // pin it to what it inherits now. The pin carries the source's timestamp, so it never beats an edit
+  // the other phone made to next month.
+  function pinNextMonth(prefix, inherited) {
+    const nmk = B.shiftMonth(view.daily.month, 1), key = prefix + ':' + nmk;
+    const cur = data.settings[key];
+    if (cur && cur.v != null && cur.v !== '') return;
+    const earlier = Object.keys(data.settings).filter(k => k.startsWith(prefix + ':') && /^\d{4}-\d{2}$/.test(k.slice(prefix.length + 1)) && k.slice(prefix.length + 1) < nmk).sort();
+    const src = earlier.length ? data.settings[earlier[earlier.length - 1]] : data.settings[prefix];
+    data.settings[key] = { v: JSON.parse(JSON.stringify(inherited)), t: Math.max(src ? src.t : 1, cur ? cur.t : 0) };
+    data.dirty.settings[key] = true;
+    // Show the kept amount in next month's box, if it's on screen (and not being typed in).
+    const box = $(`#sheetBody [data-key="${key}"]`);
+    if (box && box !== document.activeElement && typeof inherited !== 'object') box.value = inherited;
+  }
+  function setFixed(list) {
+    const target = editTarget();
+    if (target === view.daily.month) pinNextMonth('fixed', B.fixedFor(view.cfg, B.shiftMonth(target, 1)));
+    setSettings({ ['fixed:' + target]: list });
+  }
 
   const SHEETS = {
     note() {
@@ -433,8 +479,19 @@
           <div class="row"><span>Today’s limit</span>${calc('todayAvail', 'num')}</div>
           <div class="row"><span>Tomorrow (if nothing more today)</span>${calc('tomorrow', 'num')}</div>
         </div>
-        <p class="note">Each morning: money left this month ÷ days left. Money left is the bank balance minus Card and UPI spends not paid off yet, after keeping the emergency fund aside. Spend less and the coming days get a little more; spend more and they get a little less.</p>
-        <h3>${monthName(d.nextMonth.month)}</h3>
+        <p class="note">Each morning: money left this month ÷ days left. Money left is the bank balance minus Card and UPI spends not paid off yet, after keeping the emergency fund aside. Spend less and the coming days get a little more; spend more and they get a little less.${view.salary.inStart && oldBill() ? ` The card bill from before you started (${money(oldBill())}) is paid from ${monthName(d.nextMonth.month)}’s money, so it isn’t taken off here.` : ''}</p>
+        <h3>${monthName(d.nextMonth.month)}, as it stands</h3>
+        <div class="group">
+          <div class="row"><span>Left in the bank (emergency included)</span>${calc('npCarried', 'num')}</div>
+          <div class="row"><span>+ Salaries</span>${calc('npSalary', 'num pos')}</div>
+          <div class="row"><span>− Fixed costs</span>${calc('npFixed', 'num neg')}</div>
+          ${d.nextMonth.parts.fixedCard ? `<div class="row"><span>− Fixed costs on the card</span>${calc('npFixedCard', 'num neg')}</div>` : ''}
+          <div class="row"><span>− Emergency fund</span>${calc('npEmerg', 'num neg')}</div>
+          ${d.nextMonth.parts.cardDebt < 0
+            ? `<div class="row"><span>+ Card credit (paid ahead)</span>${calc('npCardCredit', 'num pos')}</div>`
+            : `<div class="row"><span>− Card bill still to pay</span>${calc('npCard', 'num neg')}</div>`}
+          <div class="row total"><span>Money for ${monthName(d.nextMonth.month)}</span><b class="num">${calc('npPool')}</b></div>
+        </div>
         <div class="group">
           <div class="row"><span>If nothing more is spent in ${monthName(mk)}</span>${calc('nextStop', 'num')}</div>
           <div class="row"><span>If every day’s limit gets used</span>${calc('nextFull', 'num')}</div>
@@ -445,18 +502,23 @@
     },
 
     salary() {
-      const cfg = view.cfg, s = view.salary, nmk = B.shiftMonth(view.daily.month, 1);
-      const fixedRows = cfg.fixed.map((f, i) => `<div class="field fixed-row">
+      const cfg = view.cfg, s = view.salary, mk = view.daily.month, nmk = B.shiftMonth(mk, 1);
+      const target = editTarget();
+      const fixed = B.fixedFor(cfg, target);
+      const fixedRows = fixed.map((f, i) => `<div class="field fixed-row">
           <input class="text" type="text" data-fixed="${i}" data-field="name" value="${esc(f.name)}" placeholder="Name" autocomplete="off">
-          <span class="money-in"><input type="text" inputmode="numeric" pattern="[0-9]*" data-fixed="${i}" data-field="amount" value="${esc(f.amount)}" placeholder="0" autocomplete="off"></span>
+          <span class="money-in"><input type="text" inputmode="decimal" data-fixed="${i}" data-field="amount" value="${esc(f.amount)}" placeholder="0" autocomplete="off"></span>
+          <button class="via ${f.via}" type="button" data-act="fixedVia" data-i="${i}" aria-label="Paid by">${f.via === 'card' ? 'Card' : 'Bank'}</button>
           <button class="del" type="button" data-act="fixedDel" data-i="${i}" aria-label="Remove">✕</button></div>`).join('');
+      const seg = s.inStart ? '' : `<div class="seg">${[['this', monthName(mk)], ['next', monthName(nmk) + ' onwards']].map(([k, label]) =>
+        `<button type="button" data-act="editWhen" data-when="${k}" class="${editWhen === k ? 'on' : ''}">${label}</button>`).join('')}</div>`;
       return head('Bank balance') + `
         <div class="group">
           ${s.inStart
             ? `<div class="row"><span>In the bank on ${fmtDate(s.startDate)}</span>${calc('salOpening', 'num')}</div>`
-            : `<div class="row"><span>Left over from ${monthName(B.shiftMonth(view.daily.month, -1))}</span>${calc('salCarried', 'num')}</div>
+            : `<div class="row"><span>Left over from ${monthName(B.shiftMonth(mk, -1))}</span>${calc('salCarried', 'num')}</div>
                <div class="row"><span>Combined salary</span>${calc('salTotal', 'num')}</div>
-               <div class="row"><span>Fixed costs</span>${calc('salFixed', 'num neg')}</div>`}
+               <div class="row"><span>Fixed costs from the bank</span>${calc('salFixed', 'num neg')}</div>`}
           <div class="row"><span>Bank spends this month</span>${calc('salBank', 'num neg')}</div>
           <div class="row small">${calc('salWho')}</div>
           <div class="row"><span>Card bills paid this month</span>${calc('salPaid', 'num neg')}</div>
@@ -464,31 +526,38 @@
           <div class="row total"><span>Bank balance</span><b class="big">${calc('salLeft')}</b></div>
         </div>
         <p class="note">Card and UPI spends (${calc('salOnCard')} this month) leave the bank when you pay the card bill, so they come off here only then.</p>
-        <h3>Salaries</h3>
-        <div class="group">${textField('Name', 'name1', cfg.name1)}${moneyField('Salary', 'salary1', cfg.salary1)}</div>
-        <div class="group">${textField('Name', 'name2', cfg.name2)}${moneyField('Salary', 'salary2', cfg.salary2)}</div>
-        <h3>Fixed monthly costs</h3>
+        <h3>Salaries and fixed costs</h3>
+        ${seg}
+        <p class="note">${s.inStart ? `These start on 1 ${monthName(nmk)}. ${monthName(mk)} runs on the bank balance you started with.` : editWhen === 'this'
+          ? `Changing ${monthName(mk)} only: ${monthName(nmk)} keeps its own amounts.`
+          : `From ${monthName(nmk)} on. ${monthName(mk)} and earlier months stay as they were.`}</p>
+        <div class="group">${textField('Name', 'name1', cfg.name1)}${moneyField('Salary', 'salary1:' + target, B.salaryFor(cfg, target, 1))}</div>
+        <div class="group">${textField('Name', 'name2', cfg.name2)}${moneyField('Salary', 'salary2:' + target, B.salaryFor(cfg, target, 2))}</div>
         <div class="group">
-          ${fixedRows || '<p class="empty-note">None yet</p>'}
-          <div class="row total"><span>Total, taken off on the 1st</span><b class="num">${calc('fixedTotal')}</b></div>
+          ${fixedRows || '<p class="empty-note">No fixed costs</p>'}
+          <div class="row total"><span>Fixed costs, taken off on the 1st</span>${calc('fxTotal', 'num')}</div>
         </div>
         <button class="btn ghost wide" type="button" data-act="fixedAdd">Add a fixed cost</button>
-        <p class="note">From ${monthName(nmk)}, each month starts from what’s left in the bank plus both salaries, minus these, so don’t log them as Bank spends too.${s.inStart ? ' This month runs on the bank balance you started with.' : ''}</p>`;
+        <p class="note">${s.inStart ? `From ${monthName(nmk)}, each month` : 'Each month'} starts from what’s left in the bank plus both salaries, minus the fixed costs, so don’t log them as spends too. Tap Bank / Card to say how each one is paid: card ones are added to the card bill on the 1st instead of leaving the bank.</p>`;
     },
 
     card() {
       const cfg = view.cfg;
       const pays = live('pay').sort((a, b) => b.ts - a.ts);
+      const adjs = live('adj').sort((a, b) => b.ts - a.ts);
       return head('Credit card') + `
         <div class="group"><div class="row"><span>Total owed</span><b class="big">${calc('cardOwed')}</b></div></div>
         <div class="group">
           <h4>Last bill · due ${calc('billDue')}</h4>
           <div class="row"><span>${calc('billState')}</span><b class="num">${calc('billLeft')}</b></div>
         </div>
+        ${view.salary.inStart && view.card.bill.left > 0 ? `<p class="note">Pay this bill from ${monthName(view.daily.nextMonth.month)}’s salary: it’s due ${fmtDate(view.card.bill.due)}, and its money is already set aside out of ${monthName(view.daily.nextMonth.month)}. Paying it before the 1st comes out of ${monthName(view.daily.month)}’s money instead.</p>` : ''}
         <div class="group">
           <h4>This cycle · ${calc('cycleRange')}</h4>
           <div class="row"><span><i class="pill card">Card</i></span>${calc('cycCard', 'num')}</div>
           <div class="row"><span><i class="pill upi">UPI on card</i></span>${calc('cycUpi', 'num')}</div>
+          ${view.card.cycle.other ? `<div class="row"><span><i class="pill fee">Fees, refunds &amp; fixed costs</i></span>${calc('cycOther', 'num')}</div>` : ''}
+          ${view.card.cycle.paidAhead ? `<div class="row"><span>Paid ahead</span>${calc('cycAhead', 'num pos')}</div>` : ''}
           <div class="row total"><span>Bill due ${calc('cycDue')}</span><b class="num">${calc('cycTotal')}</b></div>
         </div>
         <h3>Credit limit</h3>
@@ -500,13 +569,20 @@
         </div>
         <h3>Billing cycle</h3>
         <div class="group">
-          ${dayField('Statement day', 'statementDay', cfg.statementDay, 'new cycle starts')}
+          ${dayField('Statement day', 'statementDay', statementDayNow(), 'from the next statement')}
           ${dayField('Due day', 'dueDay', cfg.dueDay, 'pay the bill by')}
         </div>
         <h3>Record a bill payment</h3>
         <div class="group">
-          <div class="pay-row"><input id="payAmount" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="₹ amount paid" autocomplete="off"><button class="btn small" type="button" data-act="pay">Paid</button></div>
+          <div class="pay-row"><input id="payAmount" type="text" inputmode="decimal" placeholder="₹ amount paid" autocomplete="off"><button class="btn small" type="button" data-act="pay">Paid</button></div>
           ${pays.length ? `<ul class="list" style="margin-top:8px">${pays.map(entryRow).join('')}</ul>` : ''}
+        </div>
+        <h3>Card adjustment</h3>
+        <p class="note">Interest or a fee on the statement: add it. A refund or cashback on the card: take it off. It changes Card owed and this month’s money, but isn’t counted as a day’s spending.</p>
+        <div class="group">
+          <div class="pay-row"><input id="adjAmount" type="text" inputmode="decimal" placeholder="₹ amount" autocomplete="off"></div>
+          <div class="pay-row" style="margin-top:8px"><button class="btn small grow" type="button" data-act="adj" data-sign="1">+ Fee / interest</button><button class="btn small ghost grow" type="button" data-act="adj" data-sign="-1">− Refund / cashback</button></div>
+          ${adjs.length ? `<ul class="list" style="margin-top:8px">${adjs.map(entryRow).join('')}</ul>` : ''}
         </div>`;
     },
 
@@ -570,7 +646,6 @@
     salOpening: v => money(v.salary.opening),
     salCarried: v => money(v.salary.carried),
     salFixed: v => money(-v.salary.fixed),
-    fixedTotal: v => money(v.cfg.fixed.reduce((n, f) => n + f.amount, 0)),
     salBank: v => money(-v.salary.bank),
     salWho: v => `${v.cfg.name1} ${money(v.salary.byWho[1] || 0)} · ${v.cfg.name2} ${money(v.salary.byWho[2] || 0)}`,
     salPaid: v => money(-v.salary.paid),
@@ -581,7 +656,7 @@
     billDue: v => fmtDate(v.card.bill.due),
     billState: v => {
       const c = v.card;
-      if (c.bill.overdue) return `Overdue by ${c.bill.lateBy} day${c.bill.lateBy === 1 ? '' : 's'}`;
+      if (c.bill.overdue) return `${money(c.bill.overdueAmount)} overdue by ${c.bill.lateBy} day${c.bill.lateBy === 1 ? '' : 's'}`;
       if (c.bill.left > 0) return 'Left to pay · due ' + inDays(c.next.inDays);
       return c.credit ? `Paid · ${money(c.credit)} extra` : 'Paid ✓';
     },
@@ -590,7 +665,18 @@
     cycCard: v => money(v.card.cycle.card),
     cycUpi: v => money(v.card.cycle.upi),
     cycDue: v => fmtDate(v.card.cycle.due),
-    cycTotal: v => money(v.card.cycle.total),
+    cycTotal: v => money(v.card.cycle.net),
+    cycOther: v => money(v.card.cycle.other),
+    cycAhead: v => money(-v.card.cycle.paidAhead),
+    npCarried: v => money(v.daily.nextMonth.parts.carried),
+    npSalary: v => money(v.daily.nextMonth.parts.salary),
+    npFixed: v => money(-v.daily.nextMonth.parts.fixed),
+    npFixedCard: v => money(-v.daily.nextMonth.parts.fixedCard),
+    npEmerg: v => money(-v.daily.nextMonth.parts.emergency),
+    npCard: v => money(-v.daily.nextMonth.parts.cardDebt),
+    npCardCredit: v => money(-v.daily.nextMonth.parts.cardDebt),
+    fxTotal: () => money(B.fixedFor(view.cfg, editTarget()).reduce((n, f) => n + f.amount, 0)),
+    npPool: v => money(v.daily.nextMonth.pool),
     utilUsed: v => `${money(v.card.util.used)} · ${pctText(v.card.util)}`,
     utilRoom: v => money(v.card.util.room),
     syncStatus: () => syncText(),
@@ -600,10 +686,36 @@
   }
 
   const DONE = '<button class="btn wide done" type="button" data-act="close">Done</button>';
+  let rev = 0, sheetStamp = '', selfEdit = false;
+  const stampNow = () => view.day + '|' + rev;
+  const inSheetInput = el => el && el.tagName === 'INPUT' && $('#sheetBody').contains(el);
+  // Rebuild only once focus has left the sheet's fields, never under a finger moving to the next field.
+  function rebuildWhenLeft(el) {
+    el.addEventListener('focusout', ev => {
+      if (inSheetInput(ev.relatedTarget)) { updateCalcs(); rebuildWhenLeft(ev.relatedTarget); return; }
+      setTimeout(() => {
+        if (!sheetName || sheetStamp === stampNow()) return;
+        if (inSheetInput(document.activeElement)) { updateCalcs(); rebuildWhenLeft(document.activeElement); return; }
+        refreshSheet();
+      }, 250); // after the tap that moved focus has landed
+    }, { once: true });
+  }
+  function keepSheetFresh() {
+    if (!sheetName) return;
+    // An edit made in this sheet only updates its numbers; the sheet is already showing the new value.
+    if (selfEdit) { sheetStamp = stampNow(); updateCalcs(); return; }
+    if (sheetStamp === stampNow()) { updateCalcs(); return; }
+    const active = document.activeElement;
+    if (inSheetInput(active)) {
+      updateCalcs();
+      if (!active._rebuildArmed) { active._rebuildArmed = true; rebuildWhenLeft(active); }
+    } else refreshSheet();
+  }
   function openSheet(name) {
     hideStrip();
     sheetName = name;
     $('#sheetBody').innerHTML = SHEETS[name]() + DONE;
+    sheetStamp = stampNow();
     updateCalcs();
     const wrap = $('#sheetWrap');
     wrap.hidden = false;
@@ -621,9 +733,14 @@
   function refreshSheet() {
     if (!sheetName) return;
     const sheet = $('.sheet'), top = sheet.scrollTop;
+    const sameDay = sheetStamp.split('|')[0] === view.day;
     const open = Array.from($$('#sheetBody details'), el => el.open);
+    const typed = { pay: ($('#payAmount') || {}).value, adj: ($('#adjAmount') || {}).value };
     $('#sheetBody').innerHTML = SHEETS[sheetName]() + DONE;
-    $$('#sheetBody details').forEach((el, i) => { if (open[i] != null) el.open = open[i]; });
+    sheetStamp = stampNow();
+    if (sameDay) $$('#sheetBody details').forEach((el, i) => { if (open[i] != null) el.open = open[i]; });
+    if (typed.pay && $('#payAmount')) $('#payAmount').value = typed.pay;
+    if (typed.adj && $('#adjAmount')) $('#adjAmount').value = typed.adj;
     updateCalcs();
     sheet.scrollTop = top;
   }
@@ -657,9 +774,9 @@
     const raw = inp.value.trim();
     if (inp.dataset.type === 'text') return raw || null;
     if (raw === '') return null;
+    if (!inp.dataset.signed) return B.parseMoney(raw);
     const n = Math.round(Number(raw.replace(/[^\d.-]/g, '')));
-    if (!Number.isFinite(n)) return null;
-    return inp.dataset.signed ? n : Math.abs(n);
+    return Number.isFinite(n) ? n : null;
   }
 
   function saveNotesFromEditor() {
@@ -702,14 +819,30 @@
       setSettings({ notes: list });
       refreshSheet();
     },
+    editWhen(btn) { editWhen = btn.dataset.when; refreshSheet(); },
+    fixedVia(btn) {
+      const list = B.fixedFor(view.cfg, editTarget()).map((f, i) => (i === +btn.dataset.i ? Object.assign({}, f, { via: f.via === 'card' ? 'bank' : 'card' }) : f));
+      setFixed(list);
+      refreshSheet();
+    },
+    adj(btn) {
+      const input = $('#adjAmount'), n = B.parseMoney(input.value);
+      if (!(n > 0) || n > 9999999) { restartAnim(input, 'shake'); return; }
+      const fee = btn.dataset.sign === '1';
+      input.value = ''; // before addEntry rebuilds the sheet, so a second tap can't record it twice
+      addEntry({ type: 'adj', amount: fee ? n : -n });
+      buzz(15);
+      toast((fee ? 'Fee added ' : 'Refund recorded ') + money(n));
+      refreshSheet();
+    },
     fixedAdd() {
-      setSettings({ fixed: view.cfg.fixed.concat({ name: '', amount: 0 }) });
+      setFixed(B.fixedFor(view.cfg, editTarget()).concat({ name: '', amount: 0, via: 'bank' }));
       refreshSheet();
       const rows = $$('#sheetBody [data-field="name"]');
       if (rows.length) rows[rows.length - 1].focus();
     },
     fixedDel(btn) {
-      setSettings({ fixed: view.cfg.fixed.filter((f, i) => i !== +btn.dataset.i) });
+      setFixed(B.fixedFor(view.cfg, editTarget()).filter((f, i) => i !== +btn.dataset.i));
       refreshSheet();
     },
     del(btn) {
@@ -726,8 +859,9 @@
     },
     pay() {
       const input = $('#payAmount');
-      const n = Number(input.value.replace(/\D/g, ''));
-      if (!n) { restartAnim(input, 'shake'); return; }
+      const n = B.parseMoney(input.value);
+      if (!(n > 0) || n > 9999999) { restartAnim(input, 'shake'); return; }
+      input.value = ''; // before addEntry rebuilds the sheet, so a second tap can't record it twice
       addEntry({ type: 'pay', amount: n });
       buzz(15);
       toast(money(n) + ' payment recorded');
@@ -783,6 +917,7 @@
       for (const e of sentE) if (data.entries[e.id] && data.entries[e.id].t === e.t) delete data.dirty.entries[e.id];
       for (const k in sentS) if (data.settings[k] && data.settings[k].t === sentS[k].t) delete data.dirty.settings[k];
       const gotNews = B.merge(data, out);
+      if (gotNews) rev++;
       saveData();
       device.lastSync = Date.now();
       device.syncError = '';
@@ -793,7 +928,7 @@
       syncBusy = false;
       saveDevice();
       paintSync();
-      if (sheetName) updateCalcs();
+      if (sheetName) keepSheetFresh();
       if (hasDirty()) scheduleSync(device.syncError ? 30000 : 1000);
     }
   }
@@ -885,28 +1020,48 @@
     if (btn) ACTIONS[btn.dataset.act](btn);
   });
   $('#sheetBody').addEventListener('change', ev => {
+    selfEdit = true;
+    try { onSheetChange(ev); } finally { selfEdit = false; }
+  });
+  function onSheetChange(ev) {
     const inp = ev.target;
     if (inp.dataset.key) {
-      let v = readInput(inp);
-      if (inp.dataset.key === 'statementDay' || inp.dataset.key === 'dueDay') { v = Math.min(31, Math.max(1, v || 1)); inp.value = v; }
-      if (inp.dataset.key === 'safePct') { v = Math.min(100, Math.max(1, v || 30)); inp.value = v; }
-      setSettings({ [inp.dataset.key]: v });
+      let key = inp.dataset.key, v = readInput(inp);
+      // An open sheet built for another month (e.g. left open past midnight on the 31st) is rebuilt instead.
+      const m = /:(\d{4}-\d{2})$/.exec(key);
+      if (m && sheetStamp.split('|')[0].slice(0, 7) !== view.day.slice(0, 7)) { refreshSheet(); return; }
+      // Starting numbers can be corrected but not emptied: an empty one would quietly rebuild the start month.
+      const START = { startDate: 'date', startBank: 'bank', startCycleCard: 'cycleCard', startCycleUpi: 'cycleUpi', startBill: 'bill' };
+      if (START[key] && v == null) { const cur = view.cfg.start[START[key]]; inp.value = cur == null ? '' : cur; return; }
+      if ((key === 'statementDay' || key === 'dueDay') && v == null) { inp.value = key === 'statementDay' ? statementDayNow() : view.cfg.dueDay; return; }
+      if (key === 'statementDay' || key === 'dueDay') { v = Math.min(31, Math.max(1, v)); inp.value = v; }
+      if (key === 'statementDay') key = 'statementDay:' + view.day; // bills already made keep their dates
+      if (key === 'safePct') { v = Math.min(100, Math.max(1, v || 30)); inp.value = v; }
+      // Editing this month only: keep next month's amount as it was.
+      const pm = /^(emergency|salary1|salary2):(\d{4}-\d{2})$/.exec(key);
+      if (pm && pm[2] === view.daily.month) {
+        const nmk = B.shiftMonth(pm[2], 1);
+        pinNextMonth(pm[1], pm[1] === 'emergency' ? B.emergencyFor(view.cfg, nmk) : B.salaryFor(view.cfg, nmk, pm[1] === 'salary1' ? 1 : 2));
+      }
+      setSettings({ [key]: v });
     } else if (inp.dataset.qn != null) {
       saveNotesFromEditor();
     } else if (inp.dataset.fixed) {
       // Rebuild the list from every row, so an unfinished new row (no amount yet) isn't lost.
+      const now = B.fixedFor(view.cfg, editTarget());
       const list = Array.from($$('#sheetBody [data-field="name"]'), el => {
-        const amt = $(`#sheetBody [data-fixed="${el.dataset.fixed}"][data-field="amount"]`);
-        return { name: el.value.trim(), amount: Math.abs(Math.round(Number(amt.value.replace(/[^\d]/g, '')) || 0)) };
+        const i = el.dataset.fixed, amt = $(`#sheetBody [data-fixed="${i}"][data-field="amount"]`);
+        const n = B.parseMoney(amt.value);
+        return { name: el.value.trim(), amount: n == null ? 0 : n, via: (now[i] && now[i].via) || 'bank' };
       });
-      setSettings({ fixed: list });
+      setFixed(list);
     } else if (inp.dataset.dev) {
       device[inp.dataset.dev] = inp.value.trim();
       device.syncError = '';
       saveDevice();
       scheduleSync(200);
     }
-  });
+  }
   $('#sheetBody').addEventListener('keydown', ev => {
     if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT') return;
     if (ev.target.id === 'payAmount') ACTIONS.pay();
