@@ -729,6 +729,23 @@
   paintSync();
   syncNow();
 
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
+  // Updates install themselves: each time the app is opened or brought back, it checks for a new
+  // version; once that's downloaded it takes over and the page reloads onto it, but never while
+  // an amount is being typed or a sheet is open (then it waits until the app is next put away).
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloadPending = false;
+    const reloadNow = () => { reloadPending = false; location.reload(); };
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return; // first install: nothing old to replace
+      if (!amount && !sheetName) reloadNow();
+      else reloadPending = true;
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && reloadPending) reloadNow();
+      else if (!document.hidden) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+  }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 })();
