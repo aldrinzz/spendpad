@@ -7,7 +7,7 @@
 // Pick any secret phrase and type the same one into the app's Settings → Sync key.
 const SYNC_KEY = 'CHANGE-ME';
 
-const ENTRY_COLS = ['date', 'amount', 'method', 'who', 'type', 'deleted', 'id', 'ts', 't'];
+const ENTRY_COLS = ['date', 'amount', 'method', 'who', 'type', 'deleted', 'id', 'ts', 't', 'note'];
 const SETTING_COLS = ['key', 'value', 't'];
 
 function doGet(e) { return reply_(e && e.parameter); }
@@ -52,6 +52,7 @@ function cleanEntry_(e) {
     method: e.method ? String(e.method) : null, who: String(e.who || '1'), type: String(e.type || 'spend'),
     deleted: e.deleted === true || e.deleted === 'true' || e.deleted === 'TRUE',
     ts: Number(e.ts) || 0, t: Number(e.t) || 0,
+    note: e.note ? String(e.note) : '',
   };
 }
 

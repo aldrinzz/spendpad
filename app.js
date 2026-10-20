@@ -62,6 +62,13 @@
       cardLimit: 80000, safePct: 30,              // keep usage under 30% for the credit score
       'emergency:2026-11': 5000,                  // emergency fund from November
       fixed: [{ name: 'Hostel fees', amount: 14000 }, { name: 'Bike EMI', amount: 7280 }, { name: 'Wifi', amount: 489 }],
+      // Quick notes offered after each spend; editable under ⚙. "subs" open a second row.
+      notes: [
+        { name: 'Petrol' },
+        { name: 'Zomato/Swiggy', subs: ['Breakfast', 'Lunch', 'Dinner'] },
+        { name: 'Zepto' }, { name: 'Eggs' }, { name: 'Milk' }, { name: 'Vegetables' }, { name: 'Fruits' },
+        { name: 'Groceries (rice, flour etc.)' },
+      ],
     },
   };
   if (data.seed !== SEED_VERSION) {
@@ -96,6 +103,14 @@
     const e = data.entries[id];
     if (!e) return;
     e.deleted = deleted;
+    e.t = Date.now();
+    data.dirty.entries[id] = true;
+    changed();
+  }
+  function setNote(id, note) {
+    const e = data.entries[id];
+    if (!e) return;
+    e.note = note || '';
     e.t = Date.now();
     data.dirty.entries[id] = true;
     changed();
@@ -213,6 +228,7 @@
   let amount = '';
 
   function press(k) {
+    hideStrip();
     if (k === 'del') amount = amount.slice(0, -1);
     else if (!amount && (k === '0' || k === '00')) return nudge();
     else if (amount.length + k.length > MAX_DIGITS) return nudge();
@@ -244,7 +260,71 @@
     floatDelta(n);
     let msg = money(n) + ' · ' + METHOD[method];
     if (!wasOver && view.daily.left < 0) msg += ' · over limit';
-    toast(msg, () => { setDeleted(e.id, true); toast('Undone'); });
+    showStrip(e, msg);
+  }
+
+  // ---------- quick notes ----------
+  // rawNotes keeps unfinished rows for the editor; quickNotes is what the strip offers.
+  const rawNotes = () => {
+    const s = data.settings.notes;
+    const list = s && Array.isArray(s.v) ? s.v : SEED.settings.notes;
+    return list.filter(n => n && typeof n === 'object').map(n => ({ name: String(n.name || ''), subs: (Array.isArray(n.subs) ? n.subs : []).map(x => String(x).trim()).filter(Boolean) }));
+  };
+  const quickNotes = () => rawNotes().filter(n => n.name.trim()).map(n => ({ name: n.name.trim(), subs: n.subs }));
+  // The meal that fits the time of day goes first and is highlighted: breakfast before 11, lunch until 4, then dinner.
+  function orderSubs(subs) {
+    const h = new Date().getHours();
+    const want = h < 11 ? 'breakfast' : h < 16 ? 'lunch' : 'dinner';
+    const i = subs.findIndex(x => x.toLowerCase() === want);
+    if (i < 0) return subs.map(name => ({ name, hi: false }));
+    return [{ name: subs[i], hi: true }].concat(subs.filter((x, j) => j !== i).map(name => ({ name, hi: false })));
+  }
+
+  // The strip after a spend: what was saved, Undo, and optional quick notes. It goes away when
+  // the next amount is typed; picking a note attaches it and closes the strip.
+  let strip = null; // { id, msg, mode: 'list' | 'subs' | 'type', parent }
+  function showStrip(e, msg) {
+    strip = { id: e.id, msg, mode: 'list', parent: null };
+    paintStrip();
+  }
+  function hideStrip() {
+    if (!strip) return;
+    strip = null;
+    const el = $('#strip');
+    el.hidden = true;
+    el.classList.remove('typing');
+    el.innerHTML = '';
+  }
+  function paintStrip() {
+    const el = $('#strip');
+    if (!strip) { hideStrip(); return; }
+    const e = data.entries[strip.id];
+    const saved = esc(strip.msg) + (e && e.note ? ' · ' + esc(e.note) : '');
+    let body;
+    if (strip.mode === 'subs') {
+      body = `<div class="chips"><button type="button" class="nchip back" data-strip="back">‹ Back</button>` +
+        orderSubs(strip.parent.subs).map(x => `<button type="button" class="nchip${x.hi ? ' hi' : ''}" data-sub="${esc(x.name)}">${esc(x.name)}</button>`).join('') + '</div>';
+    } else if (strip.mode === 'type') {
+      body = `<div class="strip-type"><input id="stripInput" type="text" placeholder="Type a note" maxlength="60" autocomplete="off" enterkeyhint="done"><button type="button" class="nchip hi" data-strip="save">Save</button></div>`;
+    } else {
+      body = '<div class="chips">' + quickNotes().map((n, i) => `<button type="button" class="nchip${n.subs.length ? ' more' : ''}" data-note="${i}">${esc(n.name)}</button>`).join('') +
+        '<button type="button" class="nchip type" data-strip="type">✎ Type</button></div>';
+    }
+    el.innerHTML = `<div class="strip-head"><span class="saved"><span class="ok">✓</span>${saved}</span><button type="button" data-strip="undo">Undo</button><button type="button" class="strip-x" data-strip="close" aria-label="Close">✕</button></div>` + body;
+    el.hidden = false;
+    el.classList.toggle('typing', strip.mode === 'type');
+    if (strip.mode === 'type') { const inp = $('#stripInput'); inp.focus(); }
+  }
+  function noteDone(text) {
+    if (!strip) return;
+    const id = strip.id;
+    setNote(id, text);
+    buzz(10);
+    strip.mode = 'list';
+    $('#strip').classList.remove('typing');
+    paintStrip();
+    const keep = strip;
+    setTimeout(() => { if (strip === keep) hideStrip(); }, 1100);
   }
 
   // The typed amount flies up into "left today".
@@ -281,6 +361,7 @@
   let toastTimer = 0;
   function toast(msg, undo) {
     const el = $('#toast');
+    el.style.setProperty('--toast-bottom', innerHeight - $('#pad').getBoundingClientRect().top + 72 + 'px');
     el.innerHTML = `<span>${esc(msg)}</span>` + (undo ? '<button type="button">Undo</button>' : '');
     if (undo) el.querySelector('button').onclick = () => { el.classList.remove('show'); undo(); };
     el.classList.add('show');
@@ -309,7 +390,14 @@
     const name = view.cfg['name' + e.who] || '';
     const pill = e.type === 'pay' ? '<i class="pill pay">Paid</i>' : `<i class="pill ${METHOD[e.method] ? e.method : 'card'}">${METHOD[e.method] || 'Card'}</i>`;
     const when = (e.type === 'pay' ? fmtDate(e.date) + ', ' : '') + timeOf(e.ts);
-    return `<li>${pill}<span class="meta">${when} · ${esc(name)}</span><b>${money(e.amount)}</b><button class="del" type="button" data-act="del" data-id="${esc(e.id)}" aria-label="Delete">✕</button></li>`;
+    const note = e.type === 'spend'
+      ? (e.note ? `<span class="note-text">${esc(e.note)}</span>` : '<span class="note-add">+ note</span>')
+      : '';
+    const main = `${pill}<span class="meta">${when} · ${esc(name)}${note}</span>`;
+    const left = e.type === 'spend'
+      ? `<button class="note-btn" type="button" data-act="noteEdit" data-id="${esc(e.id)}">${main}</button>`
+      : main;
+    return `<li>${left}<b>${money(e.amount)}</b><button class="del" type="button" data-act="del" data-id="${esc(e.id)}" aria-label="Delete">✕</button></li>`;
   }
 
   function dayBlock(h, list, isToday) {
@@ -320,7 +408,20 @@
 
   const live = type => Object.values(data.entries).filter(e => !e.deleted && e.type === type);
 
+  let noteTarget = null, noteReturn = null; // entry being given a note, and the sheet to go back to
+
   const SHEETS = {
+    note() {
+      const e = data.entries[noteTarget];
+      if (!e) return head('Note') + '<p class="note">That spend is gone.</p>';
+      const picks = quickNotes().flatMap(n => (n.subs.length ? n.subs.map(x => n.name + ' · ' + x) : [n.name]));
+      return head('Note') + `
+        <p class="note">${money(e.amount)} · ${METHOD[e.method] || 'Card'} · ${fmtDate(e.date, true)}, ${timeOf(e.ts)}</p>
+        <div class="group"><div class="note-pick">${picks.map(p => `<button type="button" class="nchip${p === e.note ? ' hi' : ''}" data-act="notePick" data-note="${esc(p)}">${esc(p)}</button>`).join('')}</div></div>
+        <div class="group"><div class="strip-type"><input id="noteInput" type="text" value="${esc(e.note || '')}" placeholder="Or type a note" maxlength="60" autocomplete="off" enterkeyhint="done"><button type="button" class="nchip hi" data-act="noteSave">Save</button></div></div>
+        ${e.note ? '<button class="btn ghost wide" type="button" data-act="noteClear">Remove the note</button>' : ''}`;
+    },
+
     today() {
       const d = view.daily, mk = d.month;
       const byDay = {};
@@ -390,11 +491,6 @@
           <div class="row"><span><i class="pill upi">UPI on card</i></span>${calc('cycUpi', 'num')}</div>
           <div class="row total"><span>Bill due ${calc('cycDue')}</span><b class="num">${calc('cycTotal')}</b></div>
         </div>
-        <h3>Record a bill payment</h3>
-        <div class="group">
-          <div class="pay-row"><input id="payAmount" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="₹ amount paid" autocomplete="off"><button class="btn small" type="button" data-act="pay">Paid</button></div>
-          ${pays.length ? `<ul class="list" style="margin-top:8px">${pays.map(entryRow).join('')}</ul>` : ''}
-        </div>
         <h3>Credit limit</h3>
         <div class="group">
           ${moneyField('Card limit', 'cardLimit', cfg.cardLimit)}
@@ -406,6 +502,11 @@
         <div class="group">
           ${dayField('Statement day', 'statementDay', cfg.statementDay, 'new cycle starts')}
           ${dayField('Due day', 'dueDay', cfg.dueDay, 'pay the bill by')}
+        </div>
+        <h3>Record a bill payment</h3>
+        <div class="group">
+          <div class="pay-row"><input id="payAmount" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="₹ amount paid" autocomplete="off"><button class="btn small" type="button" data-act="pay">Paid</button></div>
+          ${pays.length ? `<ul class="list" style="margin-top:8px">${pays.map(entryRow).join('')}</ul>` : ''}
         </div>`;
     },
 
@@ -430,6 +531,17 @@
           <label class="field col"><span>Sync key</span><input data-dev="syncKey" type="text" value="${esc(device.syncKey)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
           <div class="sync-row">${calc('syncStatus', 'note')}<button class="btn small" type="button" data-act="sync">Sync now</button></div>
         </div>
+        <h3>Quick notes</h3>
+        <p class="note">Offered after every spend, in this order. Options (comma-separated) open a second row, like Breakfast, Lunch, Dinner.</p>
+        <div class="group">${rawNotes().map((n, i) => `<div class="qn-row">
+            <div class="qn-line">
+              <input type="text" data-qn="${i}" data-qn-field="name" value="${esc(n.name)}" placeholder="Note" autocomplete="off">
+              <button class="move" type="button" data-act="qnUp" data-i="${i}" aria-label="Move up"${i === 0 ? ' disabled' : ''}>↑</button>
+              <button class="del" type="button" data-act="qnDel" data-i="${i}" aria-label="Remove">✕</button>
+            </div>
+            <input type="text" data-qn="${i}" data-qn-field="subs" value="${esc(n.subs.join(', '))}" placeholder="Options (optional)" autocomplete="off">
+          </div>`).join('') || '<p class="empty-note">None yet</p>'}</div>
+        <button class="btn ghost wide" type="button" data-act="qnAdd">Add a quick note</button>
         <h3>Starting numbers</h3>
         <p class="note">What happened before you started using the app.</p>
         <div class="group">
@@ -487,9 +599,11 @@
     for (const el of $$('#sheetBody [data-calc]')) el.textContent = CALC[el.dataset.calc](view);
   }
 
+  const DONE = '<button class="btn wide done" type="button" data-act="close">Done</button>';
   function openSheet(name) {
+    hideStrip();
     sheetName = name;
-    $('#sheetBody').innerHTML = SHEETS[name]();
+    $('#sheetBody').innerHTML = SHEETS[name]() + DONE;
     updateCalcs();
     const wrap = $('#sheetWrap');
     wrap.hidden = false;
@@ -508,11 +622,36 @@
     if (!sheetName) return;
     const sheet = $('.sheet'), top = sheet.scrollTop;
     const open = Array.from($$('#sheetBody details'), el => el.open);
-    $('#sheetBody').innerHTML = SHEETS[sheetName]();
+    $('#sheetBody').innerHTML = SHEETS[sheetName]() + DONE;
     $$('#sheetBody details').forEach((el, i) => { if (open[i] != null) el.open = open[i]; });
     updateCalcs();
     sheet.scrollTop = top;
   }
+
+  // Swipe a sheet down to close it (when it's scrolled to the top).
+  (function swipeToClose() {
+    const sheet = $('.sheet');
+    let y0 = null, dy = 0;
+    sheet.addEventListener('touchstart', ev => {
+      if (sheet.scrollTop > 0 || ev.touches.length > 1 || ev.target.closest('input')) { y0 = null; return; }
+      y0 = ev.touches[0].clientY; dy = 0;
+    }, { passive: true });
+    sheet.addEventListener('touchmove', ev => {
+      if (y0 == null) return;
+      dy = ev.touches[0].clientY - y0;
+      if (dy <= 0) { sheet.style.transform = ''; return; }
+      ev.preventDefault();
+      sheet.style.transition = 'none';
+      sheet.style.transform = `translateY(${dy}px)`;
+    }, { passive: false });
+    sheet.addEventListener('touchend', () => {
+      if (y0 == null) return;
+      sheet.style.transition = '';
+      sheet.style.transform = '';
+      if (dy > 90) closeSheet();
+      y0 = null;
+    });
+  })();
 
   function readInput(inp) {
     const raw = inp.value.trim();
@@ -523,8 +662,46 @@
     return inp.dataset.signed ? n : Math.abs(n);
   }
 
+  function saveNotesFromEditor() {
+    const list = Array.from($$('#sheetBody [data-qn-field="name"]'), el => {
+      const subs = $(`#sheetBody [data-qn="${el.dataset.qn}"][data-qn-field="subs"]`).value;
+      return { name: el.value.trim(), subs: subs.split(',').map(x => x.trim()).filter(Boolean) };
+    });
+    setSettings({ notes: list });
+  }
+  const finishNote = text => {
+    setNote(noteTarget, text);
+    buzz(10);
+    if (noteReturn) openSheet(noteReturn); else closeSheet();
+  };
+
   const ACTIONS = {
     close: () => closeSheet(),
+    noteEdit(btn) {
+      noteTarget = btn.dataset.id;
+      noteReturn = sheetName;
+      openSheet('note');
+    },
+    notePick: btn => finishNote(btn.dataset.note),
+    noteSave: () => finishNote($('#noteInput').value.trim()),
+    noteClear: () => finishNote(''),
+    qnAdd() {
+      setSettings({ notes: rawNotes().concat({ name: '', subs: [] }) });
+      refreshSheet();
+      const rows = $$('#sheetBody [data-qn-field="name"]');
+      if (rows.length) rows[rows.length - 1].focus();
+    },
+    qnDel(btn) {
+      setSettings({ notes: rawNotes().filter((n, i) => i !== +btn.dataset.i) });
+      refreshSheet();
+    },
+    qnUp(btn) {
+      const list = rawNotes(), i = +btn.dataset.i;
+      if (i < 1) return;
+      [list[i - 1], list[i]] = [list[i], list[i - 1]];
+      setSettings({ notes: list });
+      refreshSheet();
+    },
     fixedAdd() {
       setSettings({ fixed: view.cfg.fixed.concat({ name: '', amount: 0 }) });
       refreshSheet();
@@ -651,6 +828,39 @@
   for (const type of ['pointerup', 'pointercancel', 'pointerleave']) $('#pad').addEventListener(type, () => clearTimeout(holdTimer));
   for (const btn of $$('.act')) btn.addEventListener('click', () => log(btn.dataset.method));
 
+  $('#strip').addEventListener('click', ev => {
+    if (!strip) return;
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const act = b.dataset.strip;
+    if (act === 'undo') {
+      const id = strip.id;
+      hideStrip();
+      setDeleted(id, true);
+      toast('Undone');
+    } else if (act === 'close') hideStrip();
+    else if (act === 'back') { strip.mode = 'list'; paintStrip(); }
+    else if (act === 'type') { strip.mode = 'type'; paintStrip(); }
+    else if (act === 'save') noteDone($('#stripInput').value.trim());
+    else if (b.dataset.sub) noteDone(strip.parent.name + ' · ' + b.dataset.sub);
+    else if (b.dataset.note != null) {
+      const n = quickNotes()[+b.dataset.note];
+      if (!n) return;
+      if (n.subs.length) { strip.mode = 'subs'; strip.parent = n; paintStrip(); }
+      else noteDone(n.name);
+    }
+  });
+  $('#strip').addEventListener('keydown', ev => {
+    if (ev.key === 'Enter' && ev.target.id === 'stripInput') { ev.preventDefault(); noteDone(ev.target.value.trim()); }
+    if (ev.key === 'Escape') hideStrip();
+  });
+  // While typing a note, keep the strip just above the on-screen keyboard.
+  if (window.visualViewport) {
+    const fit = () => document.documentElement.style.setProperty('--kb', Math.max(0, innerHeight - visualViewport.height - visualViewport.offsetTop) + 'px');
+    visualViewport.addEventListener('resize', fit);
+    visualViewport.addEventListener('scroll', fit);
+  }
+
   for (const btn of $$('main [data-sheet]')) btn.addEventListener('click', () => openSheet(btn.dataset.sheet));
   $('#settingsBtn').addEventListener('click', () => openSheet('settings'));
   $('#alerts').addEventListener('click', ev => {
@@ -681,6 +891,8 @@
       if (inp.dataset.key === 'statementDay' || inp.dataset.key === 'dueDay') { v = Math.min(31, Math.max(1, v || 1)); inp.value = v; }
       if (inp.dataset.key === 'safePct') { v = Math.min(100, Math.max(1, v || 30)); inp.value = v; }
       setSettings({ [inp.dataset.key]: v });
+    } else if (inp.dataset.qn != null) {
+      saveNotesFromEditor();
     } else if (inp.dataset.fixed) {
       // Rebuild the list from every row, so an unfinished new row (no amount yet) isn't lost.
       const list = Array.from($$('#sheetBody [data-field="name"]'), el => {
@@ -698,12 +910,15 @@
   $('#sheetBody').addEventListener('keydown', ev => {
     if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT') return;
     if (ev.target.id === 'payAmount') ACTIONS.pay();
+    else if (ev.target.id === 'noteInput') ACTIONS.noteSave();
     else ev.target.blur();
   });
 
   // A hardware keyboard works too: digits, Backspace, Enter/C for Card, U for UPI, B for Bank.
   document.addEventListener('keydown', ev => {
     if (sheetName) { if (ev.key === 'Escape') closeSheet(); return; }
+    if (ev.target.tagName === 'INPUT') return;
+    if (ev.key === 'Escape') { hideStrip(); return; }
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (/^\d$/.test(ev.key)) press(ev.key);
     else if (ev.key === 'Backspace') press('del');
@@ -738,7 +953,7 @@
     const reloadNow = () => { reloadPending = false; location.reload(); };
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!hadController) return; // first install: nothing old to replace
-      if (!amount && !sheetName) reloadNow();
+      if (!amount && !sheetName && !strip) reloadNow();
       else reloadPending = true;
     });
     document.addEventListener('visibilitychange', () => {

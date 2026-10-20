@@ -47,7 +47,7 @@ function loadScript(key) {
   return { book, post, ctx };
 }
 
-const entry = (id, t, extra) => Object.assign({ id, date: '2026-10-10', amount: 100, method: 'card', who: '1', type: 'spend', deleted: false, ts: t, t }, extra);
+const entry = (id, t, extra) => Object.assign({ id, date: '2026-10-10', amount: 100, method: 'card', who: '1', type: 'spend', deleted: false, ts: t, t, note: '' }, extra);
 
 test('refuses a wrong key, and the unedited placeholder key', () => {
   const { post } = loadScript('secret');
@@ -63,7 +63,7 @@ test('stores entries and settings and hands them back with the right types', () 
   assert.deepEqual(JSON.parse(JSON.stringify(out.entries)), [entry('a', 1)]);
   assert.deepEqual(JSON.parse(JSON.stringify(out.settings)), { 'limit:2026-10': { v: 500, t: 1 }, name1: { v: 'Asha', t: 1 } });
   // The sheet is readable by a person: a header row, then one row per expense.
-  assert.deepEqual([...book.sheets.Entries.cells()[0]], ['date', 'amount', 'method', 'who', 'type', 'deleted', 'id', 'ts', 't']);
+  assert.deepEqual([...book.sheets.Entries.cells()[0]], ['date', 'amount', 'method', 'who', 'type', 'deleted', 'id', 'ts', 't', 'note']);
   assert.deepEqual([...book.sheets.Entries.cells()[1].slice(0, 4)], ['2026-10-10', '100', 'card', '1']);
 });
 
@@ -85,4 +85,13 @@ test('a pull with nothing to send just returns everything', () => {
   const { post } = loadScript('secret');
   post({ key: 'secret', entries: [entry('a', 1), entry('b', 2)] });
   assert.equal(post({ key: 'secret' }).entries.length, 2);
+});
+
+test('notes and list settings (like the quick-note list) survive the round trip', () => {
+  const { post } = loadScript('secret');
+  const notes = [{ name: 'Zomato/Swiggy', subs: ['Breakfast', 'Lunch', 'Dinner'] }, { name: 'Milk', subs: [] }];
+  post({ key: 'secret', entries: [entry('a', 1, { note: 'Zomato/Swiggy · Lunch' })], settings: { notes: { v: notes, t: 1 } } });
+  const out = post({ key: 'secret' });
+  assert.equal(out.entries[0].note, 'Zomato/Swiggy · Lunch');
+  assert.deepEqual(JSON.parse(JSON.stringify(out.settings.notes.v)), notes);
 });

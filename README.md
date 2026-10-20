@@ -57,6 +57,8 @@ The dot on the ⚙ icon shows sync status: green means synced, amber means waiti
 
 ## Good to know
 
+- **Notes:** after tapping Card, UPI or Bank, a strip appears just above the keypad with **Undo** and quick notes (Petrol, Zomato/Swiggy → Breakfast/Lunch/Dinner, Zepto, Eggs, Milk, Vegetables, Fruits, Groceries). Tap one to attach it, tap **✎ Type** for your own, or just type the next amount to skip. Edit the list under ⚙ → Quick notes. Tap any past spend in the Daily limit screen to add or change its note.
+- **One hand:** every screen closes with the big **Done** button at the bottom or by swiping it down; ⚙ sits next to the keypad.
 - **Undo:** after logging, tap **Undo** in the message at the top. To remove an older entry, open the Daily limit screen (tap the big number), find the day, tap ✕ and then **Delete**.
 - **Hold ⌫** to clear the whole amount you've typed.
 - **Card bill payments:** tap **Card owed** → type the amount → **Paid**.
