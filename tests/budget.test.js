@@ -230,3 +230,22 @@ test('entries logged before the starting numbers were taken are ignored', () => 
   assert.equal(r.salary.left, 7950);
   assert.equal(r.card.owed, 1000);
 });
+
+test("next month's daily limit as it stands: every spend now lowers it, a card payment doesn't", () => {
+  const nov = { 'emergency:2026-11': 5000, fixed: [{ name: 'Hostel', amount: 14000 }, { name: 'Bike EMI', amount: 7280 }, { name: 'Wifi', amount: 489 }] };
+  const n = run([], '2026-10-16', nov).daily.nextMonth;
+  assert.deepEqual([n.month, n.pool, n.daysLeft, n.limit], ['2026-11', 34587, 30, 1152]);
+  // Using every remaining October limit leaves only what was kept aside: 34,587 − 7,328.
+  assert.deepEqual([n.fullUse.pool, n.fullUse.limit], [27259, 908]);
+  // ₹1,000 spent today, on any button, costs November ₹1,000.
+  for (const method of ['bank', 'card', 'upi']) {
+    assert.equal(run([spend('2026-10-16', 1000, method)], '2026-10-16', nov).daily.nextMonth.pool, 33587, method);
+  }
+  // Paying the card bill early doesn't touch it.
+  assert.equal(run([pay('2026-10-16', 21672)], '2026-10-16', nov).daily.nextMonth.pool, 34587);
+  // Sticking to the limits doesn't change the full-use figure; overspending beyond the month's money does.
+  assert.equal(run([spend('2026-10-16', 400, 'bank')], '2026-10-16', nov).daily.nextMonth.fullUse.pool, 27259);
+  // On the last day only today's leftover is still unspent.
+  const last = run([], '2026-10-31', nov).daily;
+  assert.equal(last.nextMonth.fullUse.pool, last.nextMonth.pool - last.left);
+});

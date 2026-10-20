@@ -133,6 +133,10 @@
     $('#todayBreak').innerHTML = breakdownHTML(d);
     $('#todaySpent').textContent = d.spent ? money(d.spent) + ' spent' : '';
     $('#todayBar').style.width = frac * 100 + '%';
+    // What's left of this month carries over, so every spend now shows up here too.
+    $('#nextLabel').textContent = monthName(d.nextMonth.month) + ' so far';
+    countTo($('#nextLimit'), d.nextMonth.limit, animate, n => money(n) + '/day');
+    $('#nextLimit').classList.toggle('neg', d.nextMonth.limit < 0);
     $('#todayCard').classList.toggle('over', over);
     $('#todayCard').classList.toggle('warn', !over && frac >= 0.8);
 
@@ -329,6 +333,12 @@
           <div class="row"><span>Tomorrow (if nothing more today)</span>${calc('tomorrow', 'num')}</div>
         </div>
         <p class="note">Each morning: money left this month ÷ days left. Money left is the bank balance minus Card and UPI spends not paid off yet, after keeping the emergency fund aside. Spend less and the coming days get a little more; spend more and they get a little less.</p>
+        <h3>${monthName(d.nextMonth.month)}</h3>
+        <div class="group">
+          <div class="row"><span>If nothing more is spent in ${monthName(mk)}</span>${calc('nextStop', 'num')}</div>
+          <div class="row"><span>If every day’s limit gets used</span>${calc('nextFull', 'num')}</div>
+        </div>
+        <p class="note">Whatever’s left at the end of ${monthName(mk)} carries into ${monthName(d.nextMonth.month)}, so every ₹1,000 spent now costs ${monthName(d.nextMonth.month)} about ${calc('nextPer1000')} a day. Paying the card bill doesn’t change it: that money is already kept aside.</p>
         <h3>${monthName(mk)} so far</h3>
         <div class="group days">${days}</div>`;
     },
@@ -436,6 +446,9 @@
   // Numbers inside an open sheet, refreshed in place so typing in a field is never interrupted.
   const CALC = {
     todayLeft: v => money(v.daily.left),
+    nextStop: v => `${money(v.daily.nextMonth.pool)} ÷ ${v.daily.nextMonth.daysLeft} = ${money(v.daily.nextMonth.limit)}`,
+    nextFull: v => `${money(v.daily.nextMonth.fullUse.pool)} ÷ ${v.daily.nextMonth.daysLeft} = ${money(v.daily.nextMonth.fullUse.limit)}`,
+    nextPer1000: v => money(1000 / v.daily.nextMonth.daysLeft),
     todayAvail: v => `${money(v.daily.pool)} ÷ ${v.daily.daysLeft} = ${money(v.daily.limit)}`,
     tomorrow: v => {
       const t = v.daily.tomorrow;

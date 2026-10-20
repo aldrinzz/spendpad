@@ -104,6 +104,9 @@ input { -webkit-user-select: text; user-select: text; }
 .bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--good); transition: width .55s cubic-bezier(.2, .8, .2, 1), background .3s; }
 .today.warn .bar i { background: var(--warn); }
 .today.over .bar i { background: var(--bad); }
+.next-month { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.next-month b { font: 650 15px var(--num); color: var(--ink); }
+.next-month b.neg { color: var(--bad); }
 .pop { animation: pop .35s cubic-bezier(.3, 1.6, .5, 1); }
 
 /* ---------- tiles ---------- */

@@ -146,7 +146,16 @@
     const next = addDays(day, 1);
     const t = limitOn(cfg, entries, next);
     const tomorrow = { date: next, pool: t.pool, daysLeft: t.daysLeft, limit: t.limit, fresh: monthOf(next) !== mk };
-    return Object.assign({ month: mk, history: history.reverse(), tomorrow }, now);
+    // Next month's daily limit as things stand: if nothing more is spent this month, everything left
+    // carries over. Every spend lowers it right away; card bill payments don't (that debt is already kept aside).
+    const nm = shiftMonth(mk, 1), n = limitOn(cfg, entries, nm + '-01');
+    // And if every remaining day's limit gets used, what's still unspent this month won't carry over.
+    const unspent = Math.max(0, tomorrow.fresh ? now.left : t.pool);
+    const nextMonth = {
+      month: nm, pool: n.pool, daysLeft: n.daysLeft, limit: n.limit,
+      fullUse: { pool: n.pool - unspent, limit: Math.floor((n.pool - unspent) / n.daysLeft) },
+    };
+    return Object.assign({ month: mk, history: history.reverse(), tomorrow, nextMonth }, now);
   }
 
   // ---------- credit card ----------
