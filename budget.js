@@ -55,8 +55,11 @@
     // 'statementDay:2026-10-20' = 15: the bank moved the statement day on that date; statements already made keep theirs.
     const statementChanges = Object.keys(settings).filter(k => /^statementDay:\d{4}-\d{2}-\d{2}$/.test(k) && settings[k].v != null && settings[k].v !== '')
       .sort().map(k => ({ at: k.slice(13), day: +settings[k].v }));
+    // { from: 'YYYY-MM', amount }: the emergency fund grows by `amount` every month from `from`.
+    const g = v('emergencyGrowth');
+    const emergencyGrowth = g && typeof g === 'object' && /^\d{4}-\d{2}$/.test(g.from) ? { from: g.from, amount: Math.max(0, +g.amount || 0) } : { from: '9999-12', amount: 0 };
     return {
-      emergencies, fixed, byMonth, statementChanges,
+      emergencies, fixed, byMonth, statementChanges, emergencyGrowth,
       name1: v('name1'), name2: v('name2'), salary1: +v('salary1'), salary2: +v('salary2'),
       emergency: +v('emergency'),
       statementDay: +v('statementDay'), dueDay: +v('dueDay'), cardLimit: +v('cardLimit'), safePct: +v('safePct'),
@@ -82,10 +85,14 @@
   };
   const salaryFor = (cfg, mk, who) => latestFor((cfg.byMonth || {})['salary' + who] || {}, mk, cfg['salary' + who]);
   const fixedFor = (cfg, mk) => latestFor((cfg.byMonth || {}).fixed || {}, mk, cfg.fixed);
+  // The emergency fund for a month: the latest amount set for it or an earlier month, plus the monthly
+  // growth for every month after that one (from the growth's start). Set 0 growth to keep it flat.
   function emergencyFor(cfg, mk) {
-    if (cfg.emergencies[mk] != null) return cfg.emergencies[mk];
-    const earlier = Object.keys(cfg.emergencies).filter(k => k < mk).sort().pop();
-    return earlier ? cfg.emergencies[earlier] : cfg.emergency;
+    const set = cfg.emergencies[mk] != null ? mk : Object.keys(cfg.emergencies).filter(k => k < mk).sort().pop();
+    let amount = set ? cfg.emergencies[set] : cfg.emergency;
+    const g = cfg.emergencyGrowth || { amount: 0 };
+    if (g.amount) for (let m = set ? shiftMonth(set, 1) : g.from; m <= mk; m = shiftMonth(m, 1)) if (m >= g.from) amount += g.amount;
+    return amount;
   }
 
   // How a month opens. The start month opens on the bank balance Aldrin gave. Every later month opens on

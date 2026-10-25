@@ -60,7 +60,8 @@
       startCycleCard: 12138, startCycleUpi: 9884, // card spends that cycle; with the 17-18 Oct spends the 19 Oct statement is 27,275, due 8 Nov
       startBill: 0,
       cardLimit: 80000, safePct: 30,              // keep usage under 30% for the credit score
-      'emergency:2026-11': 5000,                  // emergency fund from November
+      'emergency:2026-11': 5000,                  // emergency fund from November...
+      emergencyGrowth: { from: '2026-12', amount: 5000 }, // ...then ₹5,000 more every month (10,000 in Dec, 15,000 in Jan)
       fixed: [{ name: 'Hostel fees', amount: 14000 }, { name: 'Bike EMI', amount: 7280 }, { name: 'Wifi', amount: 489 }],
       // Quick notes offered after each spend; editable under ⚙. "subs" open a second row.
       notes: [
@@ -175,6 +176,7 @@
     $('#utilBar').className = uFrac > 1 ? 'bad' : uFrac >= 0.8 ? 'warn' : '';
     $('#cardUtil').textContent = `${pctText(u)} of limit · ` + (u.room >= 0 ? `${money(u.room)} to ${u.safePct}%` : `${money(-u.room)} over ${u.safePct}%`);
     countTo($('#emerg'), s.emergency, animate);
+    $('#emergSub').textContent = cfg.emergencyGrowth.amount ? `set aside · +${money(cfg.emergencyGrowth.amount)}/month` : 'set aside';
 
     countTo($('#cycleCard'), c.cycle.card, animate);
     countTo($('#cycleUpi'), c.cycle.upi, animate);
@@ -593,13 +595,15 @@
     },
 
     emergency() {
-      const cfg = view.cfg, mk = view.daily.month, nmk = B.shiftMonth(mk, 1);
+      const cfg = view.cfg, mk = view.daily.month, nmk = B.shiftMonth(mk, 1), n2 = B.shiftMonth(mk, 2);
+      const g = cfg.emergencyGrowth;
       return head('Emergency fund') + `
         <div class="group">
           ${moneyField(monthName(mk), 'emergency:' + mk, B.emergencyFor(cfg, mk))}
-          ${moneyField(monthName(nmk) + ' onwards', 'emergency:' + nmk, B.emergencyFor(cfg, nmk))}
+          ${moneyField(monthName(nmk), 'emergency:' + nmk, B.emergencyFor(cfg, nmk))}
+          ${moneyField('Grows every month by', 'emergencyGrowth', g.amount, { hint: 'set 0 to keep it the same' })}
         </div>
-        <p class="note">Kept aside: taken out of the bank balance and the money the daily limit is worked out from.</p>`;
+        <p class="note">${g.amount ? `${monthName(nmk)} ${money(B.emergencyFor(cfg, nmk))}, then ${monthName(n2)} ${money(B.emergencyFor(cfg, n2))}, and ${money(g.amount)} more every month after. ` : ''}Kept aside in the bank: taken out of the bank balance and the money the daily limit is worked out from. The amount it grows by comes out of that month’s salary.</p>`;
     },
 
     settings() {
@@ -1044,6 +1048,12 @@
       if (key === 'statementDay' || key === 'dueDay') { v = Math.min(31, Math.max(1, v)); inp.value = v; }
       if (key === 'statementDay') key = 'statementDay:' + view.day; // bills already made keep their dates
       if (key === 'safePct') { v = Math.min(100, Math.max(1, v || 30)); inp.value = v; }
+      if (key === 'emergencyGrowth') {
+        const g = view.cfg.emergencyGrowth;
+        const from = /^\d{4}-\d{2}$/.test(g.from) && g.from !== '9999-12' ? g.from : B.shiftMonth(view.daily.month, 1);
+        setSettings({ emergencyGrowth: { from, amount: v == null ? 0 : v } });
+        return;
+      }
       // Editing this month only: keep next month's amount as it was.
       const pm = /^(emergency|salary1|salary2):(\d{4}-\d{2})$/.exec(key);
       if (pm && pm[2] === view.daily.month) {

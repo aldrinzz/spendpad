@@ -170,3 +170,19 @@ test('refunds clear overdue bills, and nothing is overdue while the card is in c
 test('typing no digits is not an amount', () => {
   assert.deepEqual(['-', 'abc', '₹', ',', '-500'].map(B.parseMoney), [null, null, null, null, 500]);
 });
+
+test('the emergency fund grows by ₹5,000 every month from December', () => {
+  const G = { emergencyGrowth: { from: '2026-12', amount: 5000 } };
+  const cfg = run([], '2026-10-20', G).cfg;
+  assert.deepEqual(['2026-10', '2026-11', '2026-12', '2027-01', '2027-03'].map(m => B.emergencyFor(cfg, m)), [2000, 5000, 10000, 15000, 25000]);
+  // November fully used: December keeps 10,000 aside, so its money is 5,000 carried + 73,700 − 21,769 − 10,000.
+  const E = [pay('2026-11-05', 21672), spend('2026-11-20', 34587, 'bank')];
+  const dec = run(E, '2026-12-01', G).daily;
+  assert.equal(dec.pool, 46931);
+  assert.equal(dec.limit, 1513); // 46,931 ÷ 31
+  // An amount set for a month restarts the growth from there.
+  const cfg2 = run([], '2026-10-20', Object.assign({ 'emergency:2027-01': 12000 }, G)).cfg;
+  assert.deepEqual(['2026-12', '2027-01', '2027-02'].map(m => B.emergencyFor(cfg2, m)), [10000, 12000, 17000]);
+  // Growth 0 keeps it flat.
+  assert.equal(B.emergencyFor(run([], '2026-10-20', { emergencyGrowth: { from: '2026-12', amount: 0 } }).cfg, '2027-03'), 5000);
+});
