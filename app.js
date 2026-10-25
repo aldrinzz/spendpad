@@ -185,9 +185,14 @@
     if (sheetName) keepSheetFresh();
   }
 
-  // "₹7,328 ÷ 16 days = ₹458 a day": the money left this month spread over the days left.
+  // "₹631 + ₹100 carried over" / "₹631 − ₹200 overspent": the month's fixed daily limit plus what earlier days left.
+  const withCarry = (limit, carry) => carry
+    ? `${money(limit)} ${carry > 0 ? '+' : '−'} ${money(Math.abs(carry))}`
+    : money(limit);
   function breakdownHTML(d) {
-    return `<b>${money(d.pool)}</b> ÷ ${d.daysLeft} day${d.daysLeft === 1 ? '' : 's'} = <b>${money(d.limit)}</b> a day`;
+    if (!d.carry) return `Daily limit <b>${money(d.limit)}</b>`;
+    const plus = d.carry > 0;
+    return `<b>${money(d.limit)}</b> ${plus ? '+' : '−'} <b class="${plus ? 'pos' : 'neg'}">${money(Math.abs(d.carry))}</b> ${plus ? 'carried over' : 'overspent'}`;
   }
 
   // Warnings at the top. ✕ hides one until tomorrow; tapping it opens the matching sheet.
@@ -476,10 +481,11 @@
       return head('Daily limit') + `
         <div class="group">
           <div class="row"><span>Left today</span><b class="big">${calc('todayLeft')}</b></div>
-          <div class="row"><span>Today’s limit</span>${calc('todayAvail', 'num')}</div>
+          <div class="row"><span>${monthName(mk)}’s daily limit</span>${calc('monthLimit', 'num')}</div>
+          <div class="row"><span>Today</span>${calc('todayAvail', 'num')}</div>
           <div class="row"><span>Tomorrow (if nothing more today)</span>${calc('tomorrow', 'num')}</div>
         </div>
-        <p class="note">Each morning: money left this month ÷ days left. Money left is the bank balance minus Card and UPI spends not paid off yet, after keeping the emergency fund aside. Spend less and the coming days get a little more; spend more and they get a little less.${view.salary.inStart && oldBill() ? ` The card bill from before you started (${money(oldBill())}) is paid from ${monthName(d.nextMonth.month)}’s money, so it isn’t taken off here.` : ''}</p>
+        <p class="note">The daily limit is set on the 1st (the month’s money ÷ its days) and stays the same all month. Whatever you don’t spend is added to tomorrow; whatever you overspend comes off tomorrow, and it keeps adding up until the month ends. The month’s money is the bank balance minus Card and UPI spends not paid off yet, after keeping the emergency fund aside.${view.salary.inStart && oldBill() ? ` The card bill from before you started (${money(oldBill())}) is paid from ${monthName(d.nextMonth.month)}’s money, so it isn’t taken off here.` : ''}</p>
         <h3>${monthName(d.nextMonth.month)}, as it stands</h3>
         <div class="group">
           <div class="row"><span>Left in the bank (emergency included)</span>${calc('npCarried', 'num')}</div>
@@ -637,11 +643,12 @@
     nextStop: v => `${money(v.daily.nextMonth.pool)} ÷ ${v.daily.nextMonth.daysLeft} = ${money(v.daily.nextMonth.limit)}`,
     nextFull: v => `${money(v.daily.nextMonth.fullUse.pool)} ÷ ${v.daily.nextMonth.daysLeft} = ${money(v.daily.nextMonth.fullUse.limit)}`,
     nextPer1000: v => money(1000 / v.daily.nextMonth.daysLeft),
-    todayAvail: v => `${money(v.daily.pool)} ÷ ${v.daily.daysLeft} = ${money(v.daily.limit)}`,
+    todayAvail: v => (v.daily.carry ? withCarry(v.daily.limit, v.daily.carry) + ' = ' : '') + money(v.daily.available),
     tomorrow: v => {
       const t = v.daily.tomorrow;
-      return (t.fresh ? 'new month: ' : '') + `${money(t.pool)} ÷ ${t.daysLeft} = ${money(t.limit)}`;
+      return (t.fresh ? 'new month: ' : '') + (t.carry ? withCarry(t.limit, t.carry) + ' = ' : '') + money(t.available);
     },
+    monthLimit: v => `${money(v.daily.limit)} a day`,
     salTotal: v => money(v.salary.total),
     salOpening: v => money(v.salary.opening),
     salCarried: v => money(v.salary.carried),

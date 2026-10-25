@@ -28,7 +28,7 @@ test('an unpaid bill stays overdue after the next statement', () => {
 test('a credit on the card (paid more than owed) counts as money, so paying never moves the limits', () => {
   for (const amt of [21672, 22000, 25000]) {
     const d = run([pay('2026-11-05', amt)], '2026-11-06').daily;
-    assert.deepEqual([d.pool, d.limit, d.nextMonth.pool, d.nextMonth.limit], [34587, 1383, 86518, 2790], String(amt));
+    assert.deepEqual([d.pool, d.limit, d.nextMonth.pool, d.nextMonth.limit], [34587, 1152, 86518, 2790], String(amt));
   }
   assert.equal(run([pay('2026-11-05', 25000)], '2026-12-01').daily.pool, 86518);
   assert.equal(run([pay('2026-11-05', 25000), spend('2026-12-02', 3328)], '2026-12-03').daily.pool, 83190);
@@ -42,13 +42,13 @@ test('a salary or fixed-cost change only moves the month it starts in', () => {
   const E = [pay('2026-11-05', 21672)];
   const dec = run(E, '2026-12-15', { 'salary1:2026-12': 50000 }).salary;
   assert.deepEqual([dec.carried, dec.opening, dec.s1], [39587, 94118, 50000]);
-  assert.equal(run(E, '2026-12-15', { 'salary1:2026-12': 50000 }).daily.limit, 5242);
+  assert.equal(run(E, '2026-12-15', { 'salary1:2026-12': 50000 }).daily.limit, 2874); // 89,118 ÷ 31
   assert.equal(run(E, '2027-01-15', { 'salary1:2026-12': 50000 }).salary.carried, 94118);
   const noEmi = [{ name: 'Hostel fees', amount: 14000 }, { name: 'Wifi', amount: 489 }];
   const jan = run(E, '2027-01-15', { 'fixed:2027-01': noEmi }).salary;
   assert.deepEqual([jan.carried, jan.opening, jan.fixed], [91518, 150729, 14489]);
   assert.equal(run(E, '2027-02-15', { 'salary2:2027-02': 0 }).salary.opening, 169080);
-  assert.equal(run(E, '2026-11-15', { 'salary1:2026-12': 50000 }).daily.limit, 2161); // November untouched
+  assert.equal(run(E, '2026-11-15', { 'salary1:2026-12': 50000 }).daily.limit, 1152); // November untouched
   assert.equal(run(E, '2026-11-15', { 'salary1:2026-12': 50000 }).daily.nextMonth.pool, 89118);
   const oct = run([], '2026-10-16', { 'salary1:2026-11': 50000 }).daily;
   assert.deepEqual([oct.pool, oct.limit, oct.nextMonth.pool], [7328, 458, 37187]);
@@ -92,7 +92,7 @@ test('changing the statement day keeps the bill already made', () => {
   assert.deepEqual(run([], '2026-10-20', k).card.cycle, Object.assign(run([], '2026-10-20', k).card.cycle, { start: '2026-10-19', end: '2026-11-14' }));
   const c = run([pay('2026-11-05', 21672), spend('2026-11-10', 1000)], '2026-11-16', k).card;
   assert.deepEqual([c.bill.left, c.bill.due, c.cycle.start, c.cycle.end], [1000, '2026-12-08', '2026-11-15', '2026-12-14']);
-  assert.equal(run([], '2026-10-20', k).daily.limit, 610);
+  assert.equal(run([], '2026-10-20', k).daily.limit, 458);
 });
 
 test('next month breakdown adds up', () => {
@@ -105,7 +105,7 @@ test('next month breakdown adds up', () => {
 test('typed amounts keep rupees and drop paise', () => {
   assert.deepEqual(['21672.33', '₹21,672.33', '1084.00', '489.50', '21,672', '1.2.3', '', '.'].map(B.parseMoney), [21672, 21672, 1084, 490, 21672, null, null, null]);
   const d = run([pay('2026-11-05', B.parseMoney('21672.33'))], '2026-11-06');
-  assert.deepEqual([d.daily.pool, d.daily.limit, d.card.owed], [34587, 1383, 0]);
+  assert.deepEqual([d.daily.pool, d.daily.limit, d.card.owed], [34587, 1152, 0]);
 });
 
 test("'over today' only on a day something was spent", () => {

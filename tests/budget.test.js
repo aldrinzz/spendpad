@@ -17,14 +17,19 @@ test('daily limit = money left ÷ days left', () => {
   assert.deepEqual([d.pool, d.daysLeft, d.limit, d.left], [7328, 16, 458, 458]);
 });
 
-test("today's spends come off today's limit; tomorrow spreads what's left over the remaining days", () => {
+test("the daily limit is fixed for the month; leftovers and overspends land on tomorrow", () => {
   const d = run([spend('2026-10-16', 300, 'bank')], '2026-10-16').daily;
   assert.equal(d.left, 158);
-  assert.deepEqual([d.tomorrow.pool, d.tomorrow.daysLeft, d.tomorrow.limit], [7028, 15, 468]);
-  // Spend nothing and tomorrow rises: 7,328 ÷ 15.
-  assert.equal(run([], '2026-10-17').daily.limit, 488);
-  // Overspend and every remaining day drops: (7,328 − 1,500) ÷ 15.
-  assert.equal(run([spend('2026-10-16', 1500, 'bank')], '2026-10-17').daily.limit, 388);
+  // ₹158 unspent today: tomorrow is ₹458 + ₹158.
+  assert.deepEqual([d.tomorrow.limit, d.tomorrow.carry, d.tomorrow.available], [458, 158, 616]);
+  // Nothing spent on the 16th: the 17th is ₹458 + ₹458.
+  assert.deepEqual(['limit', 'carry', 'available'].map(k => run([], '2026-10-17').daily[k]), [458, 458, 916]);
+  // ₹1,042 over on the 16th: the 17th is ₹458 − ₹1,042.
+  assert.deepEqual(['carry', 'available'].map(k => run([spend('2026-10-16', 1500, 'bank')], '2026-10-17').daily[k]), [-1042, -584]);
+  // The last day holds whatever is left, so the month ends at ₹0.
+  assert.equal(run([], '2026-10-31').daily.available, 7328);
+  // A new month starts clean at its own limit.
+  assert.deepEqual(['limit', 'carry', 'available'].map(k => run([spend('2026-10-20', 9000, 'bank')], '2026-11-01').daily[k]), [run([spend('2026-10-20', 9000, 'bank')], '2026-11-01').daily.limit, 0, run([spend('2026-10-20', 9000, 'bank')], '2026-11-01').daily.limit]);
 });
 
 test('a card or UPI spend lowers the money left just like a bank spend', () => {
@@ -43,10 +48,10 @@ test('paying off a card spend does not lower the money left a second time', () =
   assert.equal(spendAndPay, 7028 - 21672);
 });
 
-test('history shows each day: spent of that day\'s limit', () => {
+test('history shows each day: spent of that day\'s amount (limit + carry)', () => {
   const d = run([spend('2026-10-16', 300, 'bank'), spend('2026-10-17', 100, 'card')], '2026-10-18').daily;
-  assert.deepEqual(d.history.map(h => [h.date, h.limit, h.spent]), [
-    ['2026-10-18', Math.floor(6928 / 14), 0], ['2026-10-17', 468, 100], ['2026-10-16', 458, 300],
+  assert.deepEqual(d.history.map(h => [h.date, h.limit, h.available, h.spent]), [
+    ['2026-10-18', 458, 974, 0], ['2026-10-17', 458, 616, 100], ['2026-10-16', 458, 458, 300],
   ]);
 });
 

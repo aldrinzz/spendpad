@@ -172,28 +172,45 @@
     return { pool, daysLeft, limit: Math.floor(pool / daysLeft) };
   }
 
+  // The daily limit is fixed for the month: the month's money ÷ its days, set on its first day.
+  // Each day gets that limit plus whatever earlier days left (or minus what they overspent), so
+  // ₹200 over today shows tomorrow as "limit − ₹200". Anything else that changes the month's money
+  // (fees, refunds, a salary edit) lands in the same running carry. Day = money left − the limit
+  // kept for every later day, so the month still ends at exactly ₹0.
+  function monthBase(cfg, entries, mk, from) {
+    return moneyLeft(cfg, entries, from, mk) / daysLeftIn(from);
+  }
+  function dayFigures(cfg, entries, d, base) {
+    const pool = moneyLeft(cfg, entries, d), daysLeft = daysLeftIn(d);
+    const available = Math.floor(pool - base * (daysLeft - 1) + 1e-9);
+    const limit = Math.floor(base + 1e-9);
+    return { pool, daysLeft, limit, available, carry: available - limit };
+  }
+
   function daily(cfg, entries, day) {
     const mk = monthOf(day), st = cfg.start;
     let from = st.date && monthOf(st.date) === mk ? st.date : mk + '-01';
     if (from > day) from = day;
+    const base = monthBase(cfg, entries, mk, from);
     const spentOn = {};
     for (const e of entries) {
       if (e.type === 'spend' && e.date >= from && e.date <= day) spentOn[e.date] = (spentOn[e.date] || 0) + e.amount;
     }
     const history = [];
     for (let d = from; d <= day; d = addDays(d, 1)) {
-      const l = limitOn(cfg, entries, d), spent = spentOn[d] || 0;
-      history.push({ date: d, pool: l.pool, daysLeft: l.daysLeft, limit: l.limit, available: l.limit, spent, left: l.limit - spent });
+      const f = dayFigures(cfg, entries, d, base), spent = spentOn[d] || 0;
+      history.push(Object.assign(f, { date: d, spent, left: f.available - spent }));
     }
     const now = history[history.length - 1];
     const next = addDays(day, 1);
-    const t = limitOn(cfg, entries, next);
-    const tomorrow = { date: next, pool: t.pool, daysLeft: t.daysLeft, limit: t.limit, fresh: monthOf(next) !== mk };
+    const fresh = monthOf(next) !== mk;
+    const t = dayFigures(cfg, entries, next, fresh ? monthBase(cfg, entries, monthOf(next), next) : base);
+    const tomorrow = Object.assign({ date: next, fresh }, t);
     // Next month's daily limit as things stand: if nothing more is spent this month, everything left
     // carries over. Every spend lowers it right away; card bill payments don't (that debt is already kept aside).
     const nm = shiftMonth(mk, 1), n = limitOn(cfg, entries, nm + '-01');
     // And if every remaining day's limit gets used, what's still unspent this month won't carry over.
-    const unspent = Math.max(0, tomorrow.fresh ? now.left : t.pool);
+    const unspent = Math.max(0, fresh ? now.left : t.pool);
     const no = monthOpen(cfg, entries, nm);
     const nextMonth = {
       month: nm, pool: n.pool, daysLeft: n.daysLeft, limit: n.limit,
@@ -201,9 +218,8 @@
       fullUse: { pool: n.pool - unspent, limit: Math.floor((n.pool - unspent) / n.daysLeft) },
     };
     const endOfToday = moneyLeft(cfg, entries, next, mk);
-    return Object.assign({ month: mk, history: history.reverse(), tomorrow, nextMonth, endOfToday }, now);
+    return Object.assign({ month: mk, base, history: history.reverse(), tomorrow, nextMonth, endOfToday }, now);
   }
-
   // ---------- credit card ----------
   // The cycle containing `day`: statement day to the day before the next statement day.
   function cycleOf(day, statementDay) {
