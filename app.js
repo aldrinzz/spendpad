@@ -63,6 +63,7 @@
       'emergency:2026-11': 5000,                  // emergency fund from November...
       emergencyGrowth: { from: '2026-12', amount: 5000 }, // ...then ₹5,000 more every month (10,000 in Dec, 15,000 in Jan)
       dailyCap: { from: '2026-11', amount: 1500 },  // ₹1,500/day from November; whatever is left over is saved into the emergency fund
+      'dailyLimit:2026-11': 1000,                 // November set to ₹1,000/day; what it can't cover comes out of December
       fixed: [{ name: 'Hostel fees', amount: 14000 }, { name: 'Bike EMI', amount: 7280 }, { name: 'Wifi', amount: 489 }],
       // Quick notes offered after each spend; editable under ⚙. "subs" open a second row.
       notes: [
@@ -156,7 +157,7 @@
     $('#todaySpent').textContent = d.spent ? money(d.spent) + ' spent' : '';
     $('#todayBar').style.width = frac * 100 + '%';
     // What's left of this month carries over, so every spend now shows up here too.
-    $('#nextLabel').textContent = monthName(d.nextMonth.month) + ' so far' + (d.nextMonth.parts.saved > 0 ? ` · +${money(d.nextMonth.parts.saved)} saved` : '');
+    $('#nextLabel').textContent = monthName(d.nextMonth.month) + ' so far' + (d.nextMonth.parts.saved > 0 ? ` · +${money(d.nextMonth.parts.saved)} saved` : d.nextMonth.borrow > 0 ? ` · ${money(d.nextMonth.borrow)} from ${monthName(B.shiftMonth(d.nextMonth.month, 1)).slice(0, 3)}` : '');
     countTo($('#nextLimit'), d.nextMonth.limit, animate, n => money(n) + '/day');
     $('#nextLimit').classList.toggle('neg', d.nextMonth.limit < 0);
     $('#todayCard').classList.toggle('over', over);
@@ -505,7 +506,13 @@
           <div class="row"><span>If nothing more is spent in ${monthName(mk)}</span>${calc('nextStop', 'num')}</div>
           <div class="row"><span>If every day’s limit gets used</span>${calc('nextFull', 'num')}</div>
         </div>
-        <div class="group">${moneyField('Daily limit, most', 'dailyCap', view.cfg.dailyCap ? view.cfg.dailyCap.amount : '', { placeholder: 'none', hint: 'anything a month has beyond this goes to the emergency fund' })}</div>
+        <h3>Daily limits</h3>
+        <div class="group">
+          ${view.salary.inStart ? '' : moneyField(monthName(mk), 'dailyLimit:' + mk, view.cfg.dailyLimits[mk], { placeholder: 'auto', hint: 'leave empty to work it out' })}
+          ${moneyField(monthName(d.nextMonth.month), 'dailyLimit:' + d.nextMonth.month, view.cfg.dailyLimits[d.nextMonth.month], { placeholder: 'auto', hint: 'leave empty to work it out' })}
+          ${moneyField('Other months, at most', 'dailyCap', view.cfg.dailyCap ? view.cfg.dailyCap.amount : '', { placeholder: 'none', hint: 'anything beyond goes to the emergency fund' })}
+        </div>
+        <p class="note">A limit set for a month is used as it is. If that month’s money can’t cover it, the rest comes out of the next month; if it has more, the rest goes to the emergency fund.${d.borrow > 0 ? ` This month ${money(d.borrow)} is coming out of ${monthName(d.nextMonth.month)}.` : ''}${d.nextMonth.borrow > 0 ? ` ${monthName(d.nextMonth.month)} at ${money(d.nextMonth.limit)}/day takes ${money(d.nextMonth.borrow)} from ${monthName(B.shiftMonth(d.nextMonth.month, 1))}.` : ''}</p>
         <p class="note">Whatever’s left at the end of ${monthName(mk)} carries into ${monthName(d.nextMonth.month)}, so every ₹1,000 spent now costs ${monthName(d.nextMonth.month)} about ${calc('nextPer1000')} a day. Paying the card bill doesn’t change it: that money is already kept aside.</p>
         <h3>${monthName(mk)} so far</h3>
         <div class="group days">${days}</div>`;

@@ -205,3 +205,22 @@ test('daily limit capped at ₹1,500: the rest of the month goes into the emerge
   // Without the cap, nothing changes.
   assert.equal(run(E, '2026-12-01', { emergencyGrowth: C.emergencyGrowth }).daily.limit, 1513);
 });
+
+test('a daily limit set for a month: ₹1,000 in November borrows from December automatically', () => {
+  const C = { emergencyGrowth: { from: '2026-12', amount: 5000 }, dailyCap: { from: '2026-11', amount: 1500 }, 'dailyLimit:2026-11': 1000 };
+  const OCT = [spend('2026-10-20', 16000, 'bank')]; // a heavy October: November's money is 34,587 − 16,000 = 18,587
+  const nov1 = run(OCT, '2026-11-01', C).daily;
+  assert.deepEqual([nov1.limit, nov1.available, nov1.carry, nov1.borrow], [1000, 1000, 0, 30000 - 18587]);
+  // ₹1,200 on the 1st: the 2nd is ₹1,000 − ₹200.
+  assert.deepEqual(['limit', 'carry', 'available'].map(k => run(OCT.concat(spend('2026-11-01', 1200, 'bank')), '2026-11-02', C).daily[k]), [1000, -200, 800]);
+  // Staying within the plan raises no "money used up" alert, even though the real money ran out.
+  const plan = OCT.concat(pay('2026-11-05', 21672), Array.from({ length: 29 }, (_, i) => spend(`2026-11-${String(i + 1).padStart(2, '0')}`, 1000, 'bank')));
+  assert.deepEqual(B.alerts(run(plan, '2026-11-29', C), '2026-11-29').map(a => a.id).filter(id => id === 'short'), []);
+  // December then opens with the borrowed ₹11,413 missing, and stays under the ₹1,500 cap.
+  const dec = run(plan.concat(spend('2026-11-30', 1000, 'bank')), '2026-12-01', C).daily;
+  assert.equal(dec.pool, 46931 - 11413);
+  assert.equal(dec.limit, Math.floor((46931 - 11413) / 31));
+  // A limit lower than the month can afford saves the rest instead.
+  const low = run(OCT, '2026-11-01', Object.assign({}, C, { 'dailyLimit:2026-11': 500 }));
+  assert.deepEqual([low.daily.limit, low.salary.saved, low.daily.borrow], [500, 18587 - 15000, 0]);
+});
