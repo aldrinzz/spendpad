@@ -186,3 +186,22 @@ test('the emergency fund grows by ₹5,000 every month from December', () => {
   // Growth 0 keeps it flat.
   assert.equal(B.emergencyFor(run([], '2026-10-20', { emergencyGrowth: { from: '2026-12', amount: 0 } }).cfg, '2027-03'), 5000);
 });
+
+test('daily limit capped at ₹1,500: the rest of the month goes into the emergency fund', () => {
+  const C = { emergencyGrowth: { from: '2026-12', amount: 5000 }, dailyCap: { from: '2026-11', amount: 1500 } };
+  // November can't cover ₹1,500: it keeps its own limit and saves nothing extra.
+  const nov = run([], '2026-11-01', C).daily;
+  assert.deepEqual([nov.limit, nov.nextMonth.parts.saved >= 0], [1152, true]);
+  assert.equal(run([], '2026-11-01', C).salary.saved, 0);
+  // November spent exactly: December has 46,931 for 31 days → ₹1,500/day and ₹431 extra saved.
+  const E = [pay('2026-11-05', 21672), spend('2026-11-20', 34587, 'bank')];
+  const dec = run(E, '2026-12-01', C);
+  assert.deepEqual([dec.daily.limit, dec.salary.saved, dec.salary.emergency], [1500, 431, 10431]);
+  // Spend exactly ₹1,500 every December day: January opens with that ₹431 still in the fund.
+  const decSpends = Array.from({ length: 31 }, (_, i) => spend(`2026-12-${String(i + 1).padStart(2, '0')}`, 1500, 'bank'));
+  const jan = run(E.concat(decSpends), '2027-01-01', C);
+  // January: 31 days × 1,500 = 46,500; its money is 46,931 again, so ₹431 more is saved (fund 15,000 + 431 + 431).
+  assert.deepEqual([jan.daily.limit, jan.salary.savedBefore, jan.salary.saved, jan.salary.emergency], [1500, 431, 431, 15862]);
+  // Without the cap, nothing changes.
+  assert.equal(run(E, '2026-12-01', { emergencyGrowth: C.emergencyGrowth }).daily.limit, 1513);
+});

@@ -56,10 +56,14 @@
     const statementChanges = Object.keys(settings).filter(k => /^statementDay:\d{4}-\d{2}-\d{2}$/.test(k) && settings[k].v != null && settings[k].v !== '')
       .sort().map(k => ({ at: k.slice(13), day: +settings[k].v }));
     // { from: 'YYYY-MM', amount }: the emergency fund grows by `amount` every month from `from`.
+    // { from: 'YYYY-MM', amount }: the daily limit is capped at `amount` from `from`; whatever a month
+    // has beyond that goes into the emergency fund and stays there.
+    const c = v('dailyCap');
+    const dailyCap = c && typeof c === 'object' && /^\d{4}-\d{2}$/.test(c.from) && +c.amount > 0 ? { from: c.from, amount: +c.amount } : null;
     const g = v('emergencyGrowth');
     const emergencyGrowth = g && typeof g === 'object' && /^\d{4}-\d{2}$/.test(g.from) ? { from: g.from, amount: Math.max(0, +g.amount || 0) } : { from: '9999-12', amount: 0 };
     return {
-      emergencies, fixed, byMonth, statementChanges, emergencyGrowth,
+      emergencies, fixed, byMonth, statementChanges, emergencyGrowth, dailyCap,
       name1: v('name1'), name2: v('name2'), salary1: +v('salary1'), salary2: +v('salary2'),
       emergency: +v('emergency'),
       statementDay: +v('statementDay'), dueDay: +v('dueDay'), cardLimit: +v('cardLimit'), safePct: +v('safePct'),
@@ -114,17 +118,26 @@
     const fixed = inStart ? 0 : fixedList.filter(f => f.via !== 'card').reduce((n, f) => n + f.amount, 0);
     const fixedCard = inStart ? 0 : fixedList.filter(f => f.via === 'card').reduce((n, f) => n + f.amount, 0);
     const from = inStart ? st.date : mk + '-01';
-    let carried = 0;
+    let carried = 0, savedBefore = 0;
     if (!inStart && st.date && monthOf(st.date) < mk) {
       const prev = monthOpen(cfg, entries, shiftMonth(mk, -1));
       const t = monthTotals(entries, prev.from, from);
       carried = prev.opening - t.bankOut - t.paid;
+      savedBefore = prev.savedTotal;
+    }
+    const opening = inStart ? (st.bank != null ? st.bank : salary - st.monthSpent) : carried + salary - fixed;
+    const debtBefore = inStart ? st.bill + st.cycleCard + st.cycleUpi : card(cfg, entries, addDays(from, -1)).owed; // signed: negative = paid ahead
+    // The emergency fund: its planned amount, plus every earlier month's extra savings (still in the bank).
+    const planned = emergencyFor(cfg, mk) + savedBefore;
+    // With a daily cap, this month's money beyond cap × days is saved into the fund too.
+    let saved = 0;
+    if (!inStart && cfg.dailyCap && mk >= cfg.dailyCap.from) {
+      const money = opening - planned - debtBefore - fixedCard; // the month's money on its 1st
+      saved = Math.max(0, money - cfg.dailyCap.amount * daysLeftIn(from));
     }
     return {
-      inStart, from, salary, s1, s2, fixedList, fixed, fixedCard, carried,
-      opening: inStart ? (st.bank != null ? st.bank : salary - st.monthSpent) : carried + salary - fixed,
-      emergency: emergencyFor(cfg, mk),
-      debtBefore: inStart ? st.bill + st.cycleCard + st.cycleUpi : card(cfg, entries, addDays(from, -1)).owed, // signed: negative = paid ahead
+      inStart, from, salary, s1, s2, fixedList, fixed, fixedCard, carried, opening, debtBefore,
+      emergency: planned + saved, emergencyPlanned: emergencyFor(cfg, mk), savedBefore, saved, savedTotal: savedBefore + saved,
     };
   }
 
@@ -221,7 +234,7 @@
     const no = monthOpen(cfg, entries, nm);
     const nextMonth = {
       month: nm, pool: n.pool, daysLeft: n.daysLeft, limit: n.limit,
-      parts: { carried: no.carried, salary: no.salary, fixed: no.fixed, fixedCard: no.fixedCard, emergency: no.emergency, cardDebt: no.debtBefore },
+      parts: { carried: no.carried, salary: no.salary, fixed: no.fixed, fixedCard: no.fixedCard, emergency: no.emergency, emergencyPlanned: no.emergencyPlanned, savedBefore: no.savedBefore, saved: no.saved, cardDebt: no.debtBefore },
       fullUse: { pool: n.pool - unspent, limit: Math.floor((n.pool - unspent) / n.daysLeft) },
     };
     const endOfToday = moneyLeft(cfg, entries, next, mk);
@@ -331,6 +344,7 @@
     return {
       total: o.salary, s1: o.s1, s2: o.s2, inStart: o.inStart, opening: o.opening, carried: o.carried, startDate: o.from,
       fixed: o.fixed, fixedCard: o.fixedCard, fixedList: o.inStart ? [] : o.fixedList, emergency: o.emergency,
+      emergencyPlanned: o.emergencyPlanned, savedBefore: o.savedBefore, saved: o.saved,
       bank: t.bankOut, paid: t.paid, onCard: t.onCard, byWho: t.byWho,
       left: o.opening - o.emergency - t.bankOut - t.paid,
     };

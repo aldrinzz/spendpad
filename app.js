@@ -62,6 +62,7 @@
       cardLimit: 80000, safePct: 30,              // keep usage under 30% for the credit score
       'emergency:2026-11': 5000,                  // emergency fund from November...
       emergencyGrowth: { from: '2026-12', amount: 5000 }, // ...then ₹5,000 more every month (10,000 in Dec, 15,000 in Jan)
+      dailyCap: { from: '2026-11', amount: 1500 },  // ₹1,500/day from November; whatever is left over is saved into the emergency fund
       fixed: [{ name: 'Hostel fees', amount: 14000 }, { name: 'Bike EMI', amount: 7280 }, { name: 'Wifi', amount: 489 }],
       // Quick notes offered after each spend; editable under ⚙. "subs" open a second row.
       notes: [
@@ -155,7 +156,7 @@
     $('#todaySpent').textContent = d.spent ? money(d.spent) + ' spent' : '';
     $('#todayBar').style.width = frac * 100 + '%';
     // What's left of this month carries over, so every spend now shows up here too.
-    $('#nextLabel').textContent = monthName(d.nextMonth.month) + ' so far';
+    $('#nextLabel').textContent = monthName(d.nextMonth.month) + ' so far' + (d.nextMonth.parts.saved > 0 ? ` · +${money(d.nextMonth.parts.saved)} saved` : '');
     countTo($('#nextLimit'), d.nextMonth.limit, animate, n => money(n) + '/day');
     $('#nextLimit').classList.toggle('neg', d.nextMonth.limit < 0);
     $('#todayCard').classList.toggle('over', over);
@@ -494,7 +495,7 @@
           <div class="row"><span>+ Salaries</span>${calc('npSalary', 'num pos')}</div>
           <div class="row"><span>− Fixed costs</span>${calc('npFixed', 'num neg')}</div>
           ${d.nextMonth.parts.fixedCard ? `<div class="row"><span>− Fixed costs on the card</span>${calc('npFixedCard', 'num neg')}</div>` : ''}
-          <div class="row"><span>− Emergency fund</span>${calc('npEmerg', 'num neg')}</div>
+          <div class="row"><span>− Emergency fund${d.nextMonth.parts.saved > 0 ? ' (incl. extra saved)' : ''}</span>${calc('npEmerg', 'num neg')}</div>
           ${d.nextMonth.parts.cardDebt < 0
             ? `<div class="row"><span>+ Card credit (paid ahead)</span>${calc('npCardCredit', 'num pos')}</div>`
             : `<div class="row"><span>− Card bill still to pay</span>${calc('npCard', 'num neg')}</div>`}
@@ -504,6 +505,7 @@
           <div class="row"><span>If nothing more is spent in ${monthName(mk)}</span>${calc('nextStop', 'num')}</div>
           <div class="row"><span>If every day’s limit gets used</span>${calc('nextFull', 'num')}</div>
         </div>
+        <div class="group">${moneyField('Daily limit, most', 'dailyCap', view.cfg.dailyCap ? view.cfg.dailyCap.amount : '', { placeholder: 'none', hint: 'anything a month has beyond this goes to the emergency fund' })}</div>
         <p class="note">Whatever’s left at the end of ${monthName(mk)} carries into ${monthName(d.nextMonth.month)}, so every ₹1,000 spent now costs ${monthName(d.nextMonth.month)} about ${calc('nextPer1000')} a day. Paying the card bill doesn’t change it: that money is already kept aside.</p>
         <h3>${monthName(mk)} so far</h3>
         <div class="group days">${days}</div>`;
@@ -603,6 +605,7 @@
           ${moneyField(monthName(nmk), 'emergency:' + nmk, B.emergencyFor(cfg, nmk))}
           ${moneyField('Grows every month by', 'emergencyGrowth', g.amount, { hint: 'set 0 to keep it the same' })}
         </div>
+        ${view.salary.savedBefore || view.salary.saved ? `<div class="group"><div class="row"><span>Extra saved (money beyond ${money(cfg.dailyCap ? cfg.dailyCap.amount : 0)}/day)</span><b class="num pos">${money(view.salary.savedBefore + view.salary.saved)}</b></div><div class="row total"><span>Emergency fund this month</span><b class="num">${money(view.salary.emergency)}</b></div></div>` : ''}
         <p class="note">${g.amount ? `${monthName(nmk)} ${money(B.emergencyFor(cfg, nmk))}, then ${monthName(n2)} ${money(B.emergencyFor(cfg, n2))}, and ${money(g.amount)} more every month after. ` : ''}Kept aside in the bank: taken out of the bank balance and the money the daily limit is worked out from. The amount it grows by comes out of that month’s salary.</p>`;
     },
 
@@ -1048,6 +1051,11 @@
       if (key === 'statementDay' || key === 'dueDay') { v = Math.min(31, Math.max(1, v)); inp.value = v; }
       if (key === 'statementDay') key = 'statementDay:' + view.day; // bills already made keep their dates
       if (key === 'safePct') { v = Math.min(100, Math.max(1, v || 30)); inp.value = v; }
+      if (key === 'dailyCap') {
+        const c = view.cfg.dailyCap;
+        setSettings({ dailyCap: v ? { from: c ? c.from : B.shiftMonth(view.daily.month, 1), amount: v } : null });
+        return;
+      }
       if (key === 'emergencyGrowth') {
         const g = view.cfg.emergencyGrowth;
         const from = /^\d{4}-\d{2}$/.test(g.from) && g.from !== '9999-12' ? g.from : B.shiftMonth(view.daily.month, 1);
