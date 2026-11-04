@@ -1,0 +1,76 @@
+# LavishTracker
+
+A one-screen daily spending tracker for two people. You add it to your phone's home screen from a web link. No Play Store, no App Store, nothing to pay for. Both phones share one Google Sheet, so you see the same numbers.
+
+Open it and the keypad is already there: type the amount, tap **Card** or **UPI**, done.
+
+## The rules
+
+| What | Rule |
+|---|---|
+| **Daily limit** | Set on the 1st of each month (the month's money ÷ its days) and fixed all month. Money you don't spend adds to tomorrow ("₹631 + ₹100"); overspending comes off tomorrow ("₹631 − ₹200"); it keeps adding up and starts fresh on the 1st. The month's money = whatever is left in the bank from last month + both salaries − the fixed costs − the month's emergency fund − everything owed on the card. If a daily cap is set (⚙), a month never gets more than that a day; anything beyond goes into the emergency fund. A limit set for a month is used as it is: what that month can't cover comes out of the next month, any extra is saved. |
+| **Calculator** | Top right of the main screen (or Calculator at the bottom of the Daily limit screen). Shows this month's and next month's money line by line and the daily limit each comes to. Change any number (salaries, fixed costs, emergency fund, the limit itself) to see what happens, including to next month; nothing changes until you tap **Save**. Next month assumes this month sticks to its daily limit; the main screen's next-month line shows the same figure. |
+| **Ask** | Top right of the main screen, next to Calculator. Type a question in your own words (typos are fine) or tap an example: a spend ("can I spend ₹2,000 on a trip in December?"), something to save up for ("how much to save for ₹80,000 by next November?"), or where you stand (left today, a month's daily limit, the card, the bank, the emergency fund). It answers with the calculator's rules, assuming each month sticks to its daily limit, and says **No** when a month's daily limit would drop below ₹500 (change it in Settings → Ask). A saving is worked out as the same amount taken out of every month's money from next month on, like a fixed cost. It runs on the phone: no AI service, nothing sent anywhere, and it never changes your numbers. |
+| **Starting numbers** | The app counts from a starting point (⚙ → Starting numbers): the day, what was in the bank, fixed costs still to pay that month, and anything on the card. Anything logged before that moment is inside these numbers. Your numbers live only in the Google Sheet and on the phones; the app's code has none of them. |
+| **Credit card** | The cycle runs from the 19th to the 18th, and that cycle's bill is due on the 8th of the following month. The screen shows the **last bill** (minus payments you record) and **this cycle** split into Card and UPI on card. On the 19th, this cycle automatically becomes the next bill. Both days can be changed. |
+| **Bank balance** | Works like your bank account: combined salary − Bank spends − card bill payments − emergency fund. Card and UPI-on-card spends leave the bank only when you pay the card bill, so they come off then (never twice). |
+| **Emergency fund** | Kept aside in the bank and never counted as spending money. It can grow by a set amount every month (⚙). |
+| **Who spent it** | Each phone remembers whose it is, so every entry is tagged automatically. Tap the name chip to switch. |
+
+Every expense counts against the daily limit, whether it's paid by Card, UPI or Bank. Card bill payments don't.
+
+## Setup
+
+### 1. Create the shared Google Sheet (about 5 minutes, once)
+
+1. Go to **sheets.new** in the Google account that should hold the data. Name the sheet `LavishTracker`.
+2. **Extensions → Apps Script**. Delete what's there and paste in all of [`google-sheet/Code.gs`](google-sheet/Code.gs).
+3. Near the top, change `'CHANGE-ME'` to a secret phrase only you two know (for example three random words). Save with ⌘S.
+4. **Deploy → New deployment**. Click the gear next to "Select type" and choose **Web app**:
+   - Execute as: **Me**
+   - Who has access: **Anyone**
+   - Click **Deploy**.
+5. Google asks you to authorise it. Choose your account, then on "Google hasn't verified this app" click **Advanced → Go to LavishTracker (unsafe) → Allow**. The warning appears for every personal script. This one only touches this sheet.
+6. Copy the **Web app URL** (it ends in `/exec`). This is the **sync link**.
+7. Optional check: open `<sync link>?key=<your phrase>` in a browser. You should see `{"ok":true,"entries":[],"settings":{}}`.
+
+The sheet's **Entries** tab becomes a full log of every expense (date, amount, Card/UPI, who), which is handy for reviewing a month.
+
+### 2. Install on both phones
+
+Open the app link on the phone:
+
+- **Android (Chrome):** ⋮ menu → **Add to Home screen** (or **Install app**).
+- **iPhone (Safari):** Share button → **Add to Home Screen**.
+
+Always open it from the home-screen icon. It runs full-screen and works without internet.
+
+### 3. Each phone
+
+1. ⚙ → under "This phone belongs to", pick whose phone it is.
+2. Paste the **sync link** and the **sync key** (your secret phrase), then tap **Sync now**. Your names, salaries and everything else come from the Google Sheet. The status should change to "Synced just now".
+3. On the very first phone, fill in ⚙ → names, salaries, fixed costs and Starting numbers once; the other phone gets them through the sheet.
+
+The dot on the ⚙ icon shows sync status: green means synced, amber means waiting (for example offline; it catches up automatically), red means a problem. Open ⚙ to see what's wrong.
+
+## Good to know
+
+- **Notes:** after tapping Card, UPI or Bank, a strip appears just above the keypad with **Undo** and quick notes (Petrol, Zomato/Swiggy → Breakfast/Lunch/Dinner, Zepto, Eggs, Milk, Vegetables, Fruits, Groceries). Tap one to attach it, tap **✎ Type** for your own, or just type the next amount to skip. Edit the list under ⚙ → Quick notes. Tap any past spend in the Daily limit screen to add or change its note.
+- **One hand:** every screen closes with the big **Done** button at the bottom or by swiping it down; ⚙ sits next to the keypad.
+- **Undo:** after logging, tap **Undo** in the message at the top. To remove an older entry, open the Daily limit screen (tap the big number), find the day, tap ✕ and then **Delete**.
+- **Hold ⌫** to clear the whole amount you've typed.
+- **Card bill payments:** tap **Card owed** → type the amount → **Paid**.
+- **Privacy:** anyone with both the sync link *and* the key can read and change the data, so keep them between you two. The app's code contains none of your data.
+- **Backup:** ⚙ → Download backup saves everything as a file. The Google Sheet is also a backup.
+- **If you edit Code.gs later:** Deploy → Manage deployments → ✏️ → Version: **New version** → Deploy. The sync link stays the same.
+- **App updates** reach the phones the second time the app is opened after an update.
+
+## Files
+
+| File | What it does |
+|---|---|
+| `index.html`, `styles.css`, `app.js` | The screen: keypad, tiles, detail sheets, sync |
+| `budget.js` | All the rules above, as plain functions |
+| `google-sheet/Code.gs` | The sync script that lives inside the Google Sheet |
+| `sw.js`, `manifest.webmanifest`, `icons/` | Make it installable and usable offline |
+| `ask.js` | Ask: reads a question and answers it with the rules in `budget.js` |
