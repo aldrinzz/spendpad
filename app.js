@@ -193,9 +193,12 @@
     ? `${money(limit)} ${carry > 0 ? '+' : '−'} ${money(Math.abs(carry))}`
     : money(limit);
   function breakdownHTML(d) {
-    if (!d.carry) return `Daily limit <b>${money(d.limit)}</b>`;
+    const moneyIn = d.in ? ` + <b class="pos">${money(d.in)}</b> in` : '';
+    if (!d.carry) return d.in ? `<b>${money(d.limit)}</b>${moneyIn}` : `Daily limit <b>${money(d.limit)}</b>`;
     const plus = d.carry > 0;
-    return `<b>${money(d.limit)}</b> ${plus ? '+' : '−'} <b class="${plus ? 'pos' : 'neg'}">${money(Math.abs(d.carry))}</b> ${plus ? 'carried over' : 'overspent'}`;
+    // With money in on the line too, the shorter words keep it to one line on a phone.
+    const label = plus ? (d.in ? 'carried' : 'carried over') : (d.in ? 'over' : 'overspent');
+    return `<b>${money(d.limit)}</b> ${plus ? '+' : '−'} <b class="${plus ? 'pos' : 'neg'}">${money(Math.abs(d.carry))}</b> ${label}${moneyIn}`;
   }
 
   // Warnings at the top. ✕ hides one until tomorrow; tapping it opens the matching sheet.
@@ -409,9 +412,8 @@
 
   function entryRow(e) {
     const name = view.cfg['name' + e.who] || '';
-    if (e.type === 'adj') {
-      const fee = e.amount >= 0;
-      return `<li><i class="pill ${fee ? 'fee' : 'pay'}">${fee ? 'Fee' : 'Refund'}</i><span class="meta">${fmtDate(e.date)}, ${timeOf(e.ts)} · ${esc(name)}${e.note ? `<span class="note-text">${esc(e.note)}</span>` : ''}</span><b>${fee ? '+' : '−'}${money(Math.abs(e.amount))}</b><button class="del" type="button" data-act="del" data-id="${esc(e.id)}" aria-label="Delete">✕</button></li>`;
+    if (e.type === 'in') {
+      return `<li><i class="pill in">In</i><span class="meta">${fmtDate(e.date)}, ${timeOf(e.ts)} · ${esc(name)}${e.note ? `<span class="note-text">${esc(e.note)}</span>` : ''}</span><b class="pos">+${money(e.amount)}</b><button class="del" type="button" data-act="del" data-id="${esc(e.id)}" aria-label="Delete">✕</button></li>`;
     }
     const pill = e.type === 'pay' ? '<i class="pill pay">Paid</i>' : `<i class="pill ${METHOD[e.method] ? e.method : 'card'}">${METHOD[e.method] || 'Card'}</i>`;
     const when = (e.type === 'pay' ? fmtDate(e.date) + ', ' : '') + timeOf(e.ts);
@@ -621,7 +623,7 @@
     today() {
       const d = view.daily, mk = d.month;
       const byDay = {};
-      for (const e of live('spend')) if (B.monthOf(e.date) === mk) (byDay[e.date] = byDay[e.date] || []).push(e);
+      for (const e of live('spend').concat(live('in'))) if (B.monthOf(e.date) === mk) (byDay[e.date] = byDay[e.date] || []).push(e);
       const days = d.history.map(h => dayBlock(h, (byDay[h.date] || []).sort((a, b) => b.ts - a.ts), h.date === view.day)).join('');
       return head('Daily limit') + `
         <div class="group">
@@ -731,6 +733,7 @@
           <button class="del" type="button" data-act="fixedDel" data-i="${i}" aria-label="Remove">✕</button></div>`).join('');
       const seg = s.inStart ? '' : `<div class="seg">${[['this', monthName(mk)], ['next', monthName(nmk) + ' onwards']].map(([k, label]) =>
         `<button type="button" data-act="editWhen" data-when="${k}" class="${editWhen === k ? 'on' : ''}">${label}</button>`).join('')}</div>`;
+      const moneyIns = live('in').filter(e => B.monthOf(e.date) === mk).sort((a, b) => b.ts - a.ts);
       return head('Bank balance') + `
         <div class="group">
           ${s.inStart
@@ -739,6 +742,7 @@
             : `<div class="row"><span>Left over from ${monthName(B.shiftMonth(mk, -1))}</span>${calc('salCarried', 'num')}</div>
                <div class="row"><span>Combined salary</span>${calc('salTotal', 'num')}</div>
                <div class="row"><span>Fixed costs from the bank</span>${calc('salFixed', 'num neg')}</div>`}
+          ${s.bankIn ? `<div class="row"><span>Money in this month</span>${calc('salIn', 'num pos')}</div>` : ''}
           <div class="row"><span>Bank spends this month</span>${calc('salBank', 'num neg')}</div>
           <div class="row small">${calc('salWho')}</div>
           <div class="row"><span>Card bills paid this month</span>${calc('salPaid', 'num neg')}</div>
@@ -746,6 +750,14 @@
           <div class="row total"><span>Bank balance</span><b class="big">${calc('salLeft')}</b></div>
         </div>
         <p class="note">Card and UPI spends (${calc('salOnCard')} this month) leave the bank when you pay the card bill, so they come off here only then.</p>
+        <h3>Money in or out</h3>
+        <p class="note">Money into the bank (interest, a transfer in) is added to today’s limit straight away. Money taken out is a Bank spend for today.</p>
+        <div class="group">
+          <div class="pay-row"><input id="bankAmount" type="text" inputmode="decimal" placeholder="₹ amount" autocomplete="off"></div>
+          <div class="pay-row" style="margin-top:8px"><input id="bankNote" class="text" type="text" placeholder="Note (optional), like Interest" autocomplete="off"></div>
+          <div class="pay-row" style="margin-top:8px"><button class="btn small grow" type="button" data-act="bankMove" data-sign="1">+ Add to bank</button><button class="btn small ghost grow" type="button" data-act="bankMove" data-sign="-1">− Take from bank</button></div>
+          ${moneyIns.length ? `<ul class="list" style="margin-top:8px">${moneyIns.map(entryRow).join('')}</ul>` : ''}
+        </div>
         <h3>Salaries and fixed costs</h3>
         ${seg}
         <p class="note">${s.inStart ? `These start on 1 ${monthName(nmk)}. ${monthName(mk)} runs on the bank balance you started with.` : editWhen === 'this'
@@ -764,7 +776,6 @@
     card() {
       const cfg = view.cfg;
       const pays = live('pay').sort((a, b) => b.ts - a.ts);
-      const adjs = live('adj').sort((a, b) => b.ts - a.ts);
       return head('Credit card') + `
         <div class="group"><div class="row"><span>Total owed</span><b class="big">${calc('cardOwed')}</b></div></div>
         <div class="group">
@@ -796,13 +807,6 @@
         <div class="group">
           <div class="pay-row"><input id="payAmount" type="text" inputmode="decimal" placeholder="₹ amount paid" autocomplete="off"><button class="btn small" type="button" data-act="pay">Paid</button></div>
           ${pays.length ? `<ul class="list" style="margin-top:8px">${pays.map(entryRow).join('')}</ul>` : ''}
-        </div>
-        <h3>Card adjustment</h3>
-        <p class="note">Interest or a fee on the statement: add it. A refund or cashback on the card: take it off. It changes Card owed and this month’s money, but isn’t counted as a day’s spending.</p>
-        <div class="group">
-          <div class="pay-row"><input id="adjAmount" type="text" inputmode="decimal" placeholder="₹ amount" autocomplete="off"></div>
-          <div class="pay-row" style="margin-top:8px"><button class="btn small grow" type="button" data-act="adj" data-sign="1">+ Fee / interest</button><button class="btn small ghost grow" type="button" data-act="adj" data-sign="-1">− Refund / cashback</button></div>
-          ${adjs.length ? `<ul class="list" style="margin-top:8px">${adjs.map(entryRow).join('')}</ul>` : ''}
         </div>`;
     },
 
@@ -877,6 +881,7 @@
     salCarried: v => money(v.salary.carried),
     salFixed: v => money(-v.salary.fixed),
     salBank: v => money(-v.salary.bank),
+    salIn: v => '+' + money(v.salary.bankIn),
     salWho: v => `${v.cfg.name1} ${money(v.salary.byWho[1] || 0)} · ${v.cfg.name2} ${money(v.salary.byWho[2] || 0)}`,
     salPaid: v => money(-v.salary.paid),
     salOnCard: v => money(v.salary.onCard),
@@ -977,12 +982,12 @@
     const sheet = $('.sheet'), top = sheet.scrollTop;
     const sameDay = sheetStamp.split('|')[0] === view.day;
     const open = Array.from($$('#sheetBody details'), el => el.open);
-    const typed = { pay: ($('#payAmount') || {}).value, adj: ($('#adjAmount') || {}).value };
+    // Half-typed amounts survive a refresh (a sync arriving while you type).
+    const typed = ['payAmount', 'bankAmount', 'bankNote'].map(id => [id, ($('#' + id) || {}).value]);
     $('#sheetBody').innerHTML = SHEETS[sheetName]() + footer();
     sheetStamp = stampNow();
     if (sameDay) $$('#sheetBody details').forEach((el, i) => { if (open[i] != null) el.open = open[i]; });
-    if (typed.pay && $('#payAmount')) $('#payAmount').value = typed.pay;
-    if (typed.adj && $('#adjAmount')) $('#adjAmount').value = typed.adj;
+    for (const [id, v] of typed) if (v && $('#' + id)) $('#' + id).value = v;
     updateCalcs();
     sheet.scrollTop = top;
   }
@@ -1103,14 +1108,15 @@
       setFixed(list);
       refreshSheet();
     },
-    adj(btn) {
-      const input = $('#adjAmount'), n = B.parseMoney(input.value);
+    // Money in is its own entry; money out is simply a Bank spend for today, so it counts as spending.
+    bankMove(btn) {
+      const input = $('#bankAmount'), noteInput = $('#bankNote'), n = B.parseMoney(input.value);
       if (!(n > 0) || n > 9999999) { restartAnim(input, 'shake'); return; }
-      const fee = btn.dataset.sign === '1';
-      input.value = ''; // before addEntry rebuilds the sheet, so a second tap can't record it twice
-      addEntry({ type: 'adj', amount: fee ? n : -n });
+      const into = btn.dataset.sign === '1', note = noteInput.value.trim().slice(0, 60);
+      input.value = ''; noteInput.value = ''; // before addEntry rebuilds the sheet, so a second tap can't record it twice
+      addEntry(into ? { type: 'in', amount: n, note } : { type: 'spend', method: 'bank', amount: n, note });
       buzz(15);
-      toast((fee ? 'Fee added ' : 'Refund recorded ') + money(n));
+      toast(into ? money(n) + ' added to the bank' : money(n) + ' taken from the bank · Bank spend');
       refreshSheet();
     },
     fixedAdd() {

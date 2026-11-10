@@ -146,7 +146,7 @@
     if (!inStart && st.date && monthOf(st.date) < mk) {
       const prev = monthOpen(cfg, entries, shiftMonth(mk, -1));
       const t = monthTotals(entries, prev.from, from);
-      carried = prev.opening - t.bankOut - t.paid;
+      carried = prev.opening - t.bankOut - t.paid + t.bankIn;
       savedBefore = prev.savedTotal;
     }
     const opening = inStart ? (st.bank != null ? st.bank : salary - st.monthSpent) - fixed : carried + salary - fixed;
@@ -181,15 +181,17 @@
   }
 
   // Totals for the month from its first tracked day up to (but not including) `until`.
+  // 'in' entries are money that came into the bank (interest, a transfer in): not spending, just more money.
   function monthTotals(entries, from, until) {
-    const t = { bankOut: 0, paid: 0, onCard: 0, byWho: { 1: 0, 2: 0 } };
+    const t = { bankOut: 0, paid: 0, onCard: 0, bankIn: 0, byWho: { 1: 0, 2: 0 } };
     for (const e of entries) {
       if (e.date < from || e.date >= until) continue;
       if (e.type === 'pay') t.paid += e.amount;
+      else if (e.type === 'in') t.bankIn += e.amount;
       else if (e.type === 'spend' && e.method === 'bank') { t.bankOut += e.amount; t.byWho[e.who] = (t.byWho[e.who] || 0) + e.amount; }
       else if (isCardCharge(e)) t.onCard += e.amount;
     }
-    for (const k of ['bankOut', 'paid', 'onCard']) t[k] = r2(t[k]);
+    for (const k of ['bankOut', 'paid', 'onCard', 'bankIn']) t[k] = r2(t[k]);
     for (const k in t.byWho) t.byWho[k] = r2(t.byWho[k]);
     return t;
   }
@@ -201,7 +203,7 @@
   function moneyLeft(cfg, entries, d, mk) {
     const o = monthOpen(cfg, entries, mk || monthOf(d));
     const t = monthTotals(entries, o.from, d);
-    const bank = o.opening - o.emergency - t.bankOut - t.paid;
+    const bank = o.opening - o.emergency - t.bankOut - t.paid + t.bankIn;
     const unpaid = o.inStart && cfg.start.billLater
       ? t.onCard - Math.max(0, t.paid - o.debtBefore)
       : o.debtBefore + o.fixedCard + t.onCard - t.paid;
@@ -240,14 +242,19 @@
     let from = st.date && monthOf(st.date) === mk ? st.date : mk + '-01';
     if (from > day) from = day;
     const base = monthBase(cfg, entries, mk, from), borrow = monthOpen(cfg, entries, mk).borrow || 0;
-    const spentOn = {};
+    // Money that comes into the bank counts on its own day, the way spends do: it's added to that day's
+    // limit at once, and whatever of it isn't spent carries into the next day like any other money.
+    const spentOn = {}, inOn = {};
     for (const e of entries) {
-      if (e.type === 'spend' && e.date >= from && e.date <= day) spentOn[e.date] = (spentOn[e.date] || 0) + e.amount;
+      if (e.date < from || e.date > day) continue;
+      if (e.type === 'spend') spentOn[e.date] = (spentOn[e.date] || 0) + e.amount;
+      else if (e.type === 'in') inOn[e.date] = (inOn[e.date] || 0) + e.amount;
     }
     const history = [];
     for (let d = from; d <= day; d = addDays(d, 1)) {
-      const f = dayFigures(cfg, entries, d, base, borrow), spent = r2(spentOn[d] || 0);
-      history.push(Object.assign(f, { date: d, spent, left: r2(f.available - spent) }));
+      const f = dayFigures(cfg, entries, d, base, borrow), spent = r2(spentOn[d] || 0), moneyIn = r2(inOn[d] || 0);
+      const available = r2(f.available + moneyIn);
+      history.push(Object.assign(f, { date: d, spent, in: moneyIn, available, left: r2(available - spent) }));
     }
     const now = history[history.length - 1];
     const next = addDays(day, 1);
@@ -426,7 +433,7 @@
   }
 
   // ---------- bank balance ----------
-  // Works like the bank account: combined salary - Bank spends - card bill payments - emergency fund.
+  // Works like the bank account: combined salary + money in - Bank spends - card bill payments - emergency fund.
   // Card and UPI-on-card spends leave the bank only when the card bill is paid, so they aren't taken off twice.
   function salary(cfg, entries, day) {
     const o = monthOpen(cfg, entries, monthOf(day));
@@ -435,8 +442,8 @@
       total: o.salary, s1: o.s1, s2: o.s2, inStart: o.inStart, opening: o.opening, carried: o.carried, startDate: o.from,
       fixed: o.fixed, fixedCard: o.fixedCard, fixedList: o.inStart ? [] : o.fixedList, emergency: o.emergency,
       emergencyPlanned: o.emergencyPlanned, savedBefore: o.savedBefore, saved: o.saved,
-      bank: t.bankOut, paid: t.paid, onCard: t.onCard, byWho: t.byWho,
-      left: r2(o.opening - o.emergency - t.bankOut - t.paid),
+      bank: t.bankOut, paid: t.paid, onCard: t.onCard, bankIn: t.bankIn, byWho: t.byWho,
+      left: r2(o.opening - o.emergency - t.bankOut - t.paid + t.bankIn),
     };
   }
 
