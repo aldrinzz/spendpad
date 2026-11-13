@@ -319,6 +319,8 @@ input { -webkit-user-select: text; user-select: text; }
 .pill.bank { background: var(--bank); }
 .pill.fee { background: var(--warn); }
 .pill.in { background: var(--good); }
+.list .next-tag { display: block; color: var(--hi); font-size: 12.5px; font-weight: 600; }
+.list li.next > b { color: var(--muted); }
 .fixed-row .via { flex: none; min-width: 58px; height: 38px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 700; text-align: center; color: #fff; background: var(--bank); }
 .fixed-row .via.card { background: var(--card); }
 .btn.grow { flex: 1; }
@@ -381,7 +383,8 @@ input { -webkit-user-select: text; user-select: text; }
 .nchip:active { transform: scale(.94); background: var(--key-press); }
 .nchip.more::after { content: " ›"; color: var(--muted); }
 .nchip.hi { background: var(--hi); color: #fff; box-shadow: none; }
-.nchip.back, .nchip.type { color: var(--hi); }
+.nchip.back, .nchip.type, .nchip.next { color: var(--hi); }
+.nchip.next.hi { color: #fff; }
 .strip-type { display: flex; gap: 8px; }
 .strip-type input {
   flex: 1; min-width: 0; min-height: 46px; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line);

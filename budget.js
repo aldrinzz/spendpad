@@ -167,7 +167,11 @@
   // Anything that changes what's owed on the card: Card/UPI spends and card adjustments
   // ('adj': + interest or fees, − refunds or cashback). Adjustments aren't spending, so they
   // never count against a day's limit, but they do change the card debt and so the month's money.
-  const isCardCharge = e => (e.type === 'spend' && e.method !== 'bank') || e.type === 'adj';
+  // 'advance': a spend paid from next month's money. It's real spending (on the card, or out of the bank),
+  // but its own month carries on as if it hadn't happened: it never counts against a day's limit and the
+  // Bank balance screen leaves it out. The month after opens with it gone, so that month pays for it.
+  const isSpend = e => e.type === 'spend' || e.type === 'advance';
+  const isCardCharge = e => (isSpend(e) && e.method !== 'bank') || e.type === 'adj';
 
   // Fixed costs marked 'paid by card' are charged to the card on the 1st of every month after the start month.
   function fixedCardCharges(cfg, upTo) {
@@ -182,13 +186,15 @@
 
   // Totals for the month from its first tracked day up to (but not including) `until`.
   // 'in' entries are money that came into the bank (interest, a transfer in): not spending, just more money.
-  function monthTotals(entries, from, until) {
+  // thisMonth leaves out spends paid from next month's money (for the month's own figures).
+  function monthTotals(entries, from, until, thisMonth) {
     const t = { bankOut: 0, paid: 0, onCard: 0, bankIn: 0, byWho: { 1: 0, 2: 0 } };
     for (const e of entries) {
       if (e.date < from || e.date >= until) continue;
+      if (thisMonth && e.type === 'advance') continue;
       if (e.type === 'pay') t.paid += e.amount;
       else if (e.type === 'in') t.bankIn += e.amount;
-      else if (e.type === 'spend' && e.method === 'bank') { t.bankOut += e.amount; t.byWho[e.who] = (t.byWho[e.who] || 0) + e.amount; }
+      else if (isSpend(e) && e.method === 'bank') { t.bankOut += e.amount; t.byWho[e.who] = (t.byWho[e.who] || 0) + e.amount; }
       else if (isCardCharge(e)) t.onCard += e.amount;
     }
     for (const k of ['bankOut', 'paid', 'onCard', 'bankIn']) t[k] = r2(t[k]);
@@ -200,9 +206,10 @@
   // When the debt from before the start is paid from next month (October 2026), the start month keeps
   // aside only new card spends (payments go to the old bill first), as it was worked out by
   // hand. Otherwise all unpaid card debt is kept aside.
+  // Spends paid from next month's money are left out here: they come off next month's opening instead.
   function moneyLeft(cfg, entries, d, mk) {
     const o = monthOpen(cfg, entries, mk || monthOf(d));
-    const t = monthTotals(entries, o.from, d);
+    const t = monthTotals(entries, o.from, d, true);
     const bank = o.opening - o.emergency - t.bankOut - t.paid + t.bankIn;
     const unpaid = o.inStart && cfg.start.billLater
       ? t.onCard - Math.max(0, t.paid - o.debtBefore)
@@ -437,7 +444,7 @@
   // Card and UPI-on-card spends leave the bank only when the card bill is paid, so they aren't taken off twice.
   function salary(cfg, entries, day) {
     const o = monthOpen(cfg, entries, monthOf(day));
-    const t = monthTotals(entries, o.from, addDays(day, 1));
+    const t = monthTotals(entries, o.from, addDays(day, 1), true); // next month's spends show from the 1st
     return {
       total: o.salary, s1: o.s1, s2: o.s2, inStart: o.inStart, opening: o.opening, carried: o.carried, startDate: o.from,
       fixed: o.fixed, fixedCard: o.fixedCard, fixedList: o.inStart ? [] : o.fixedList, emergency: o.emergency,

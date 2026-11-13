@@ -57,6 +57,7 @@ The dot on the ⚙ icon shows sync status: green means synced, amber means waiti
 
 - **Notes:** after tapping Card, UPI or Bank, a strip appears just above the keypad with **Undo** and quick notes (Petrol, Zomato/Swiggy → Breakfast/Lunch/Dinner, Zepto, Eggs, Milk, Vegetables, Fruits, Groceries). Tap one to attach it, tap **✎ Type** for your own, or just type the next amount to skip. Edit the list under ⚙ → Quick notes. Tap any past spend in the Daily limit screen to add or change its note.
 - **One hand:** every screen closes with the big **Done** button at the bottom or by swiping it down; ⚙ sits next to the keypad.
+- **From next month's money:** the first chip in that strip, **From December** (always the month after the spend), moves the spend you just entered onto next month: it stays on the card bill (or out of the bank) and listed under its day, but it isn't added to that day's total or taken off this month's limit, and the Bank balance screen leaves it out. On the 1st, next month opens with it gone. Tap the chip again to put it back on today. It's offered only right after entering a spend.
 - **Undo:** after logging, tap **Undo** in the message at the top. To remove an older entry, open the Daily limit screen (tap the big number), find the day, tap ✕ and then **Delete**.
 - **Hold ⌫** to clear the whole amount you've typed.
 - **Card bill payments:** tap **Card owed** → type the amount → **Paid**.

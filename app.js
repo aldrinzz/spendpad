@@ -118,6 +118,15 @@
     data.dirty.entries[id] = true;
     changed();
   }
+  // A spend just entered can be switched to "from next month's money" ('advance') and back, from the strip.
+  function setType(id, type) {
+    const e = data.entries[id];
+    if (!e) return;
+    e.type = type;
+    e.t = Date.now();
+    data.dirty.entries[id] = true;
+    changed();
+  }
   function setSettings(pairs) {
     const t = Date.now();
     for (const k in pairs) {
@@ -281,10 +290,10 @@
     countDelay = 0;
     buzz(15);
     floatDelta(n);
-    let msg = money(n) + ' · ' + METHOD[method];
-    if (!wasOver && view.daily.left < 0) msg += ' · over limit';
-    showStrip(e, msg);
+    showStrip(e, money(n) + ' · ' + METHOD[method], !wasOver && view.daily.left < 0);
   }
+  // The month whose money pays for a spend marked "from next month".
+  const payMonth = e => monthName(B.shiftMonth(B.monthOf(e.date), 1));
 
   // ---------- quick notes ----------
   // rawNotes keeps unfinished rows for the editor; quickNotes is what the strip offers.
@@ -305,9 +314,9 @@
 
   // The strip after a spend: what was saved, Undo, and optional quick notes. It goes away when
   // the next amount is typed; picking a note attaches it and closes the strip.
-  let strip = null; // { id, msg, mode: 'list' | 'subs' | 'type', parent }
-  function showStrip(e, msg) {
-    strip = { id: e.id, msg, mode: 'list', parent: null };
+  let strip = null; // { id, msg, over, mode: 'list' | 'subs' | 'type', parent }
+  function showStrip(e, msg, over) {
+    strip = { id: e.id, msg, over, mode: 'list', parent: null };
     paintStrip();
   }
   function hideStrip() {
@@ -322,7 +331,8 @@
     const el = $('#strip');
     if (!strip) { hideStrip(); return; }
     const e = data.entries[strip.id];
-    const saved = esc(strip.msg) + (e && e.note ? ' · ' + esc(e.note) : '');
+    const adv = !!e && e.type === 'advance';
+    const saved = esc(strip.msg) + (adv ? ' · from ' + payMonth(e) : strip.over ? ' · over limit' : '') + (e && e.note ? ' · ' + esc(e.note) : '');
     let body;
     if (strip.mode === 'subs') {
       body = `<div class="chips"><button type="button" class="nchip back" data-strip="back">‹ Back</button>` +
@@ -330,7 +340,9 @@
     } else if (strip.mode === 'type') {
       body = `<div class="strip-type"><input id="stripInput" type="text" placeholder="Type a note" maxlength="60" autocomplete="off" enterkeyhint="done"><button type="button" class="nchip hi" data-strip="save">Save</button></div>`;
     } else {
-      body = '<div class="chips">' + quickNotes().map((n, i) => `<button type="button" class="nchip${n.subs.length ? ' more' : ''}" data-note="${i}">${esc(n.name)}</button>`).join('') +
+      // First chip: pay for this spend out of next month's money instead of today's limit (tap again to undo).
+      const nextChip = e ? `<button type="button" class="nchip next${adv ? ' hi' : ''}" data-strip="next" aria-pressed="${adv}">${adv ? '✓ ' : ''}From ${payMonth(e)}</button>` : '';
+      body = '<div class="chips">' + nextChip + quickNotes().map((n, i) => `<button type="button" class="nchip${n.subs.length ? ' more' : ''}" data-note="${i}">${esc(n.name)}</button>`).join('') +
         '<button type="button" class="nchip type" data-strip="type">✎ Type</button></div>';
     }
     el.innerHTML = `<div class="strip-head"><span class="saved"><span class="ok">✓</span>${saved}</span><button type="button" data-strip="undo">Undo</button><button type="button" class="strip-x" data-strip="close" aria-label="Close">✕</button></div>` + body;
@@ -417,14 +429,17 @@
     }
     const pill = e.type === 'pay' ? '<i class="pill pay">Paid</i>' : `<i class="pill ${METHOD[e.method] ? e.method : 'card'}">${METHOD[e.method] || 'Card'}</i>`;
     const when = (e.type === 'pay' ? fmtDate(e.date) + ', ' : '') + timeOf(e.ts);
-    const note = e.type === 'spend'
+    const spend = e.type === 'spend' || e.type === 'advance', adv = e.type === 'advance';
+    const note = spend
       ? (e.note ? `<span class="note-text">${esc(e.note)}</span>` : '<span class="note-add">+ note</span>')
       : '';
-    const main = `${pill}<span class="meta">${when} · ${esc(name)}${note}</span>`;
-    const left = e.type === 'spend'
+    // A spend paid from next month's money is listed on its day but not added to the day's total.
+    const tag = adv ? `<span class="next-tag">From ${payMonth(e)}’s money · not in today’s total</span>` : '';
+    const main = `${pill}<span class="meta">${when} · ${esc(name)}${tag}${note}</span>`;
+    const left = spend
       ? `<button class="note-btn" type="button" data-act="noteEdit" data-id="${esc(e.id)}">${main}</button>`
       : main;
-    return `<li>${left}<b>${money(e.amount)}</b><button class="del" type="button" data-act="del" data-id="${esc(e.id)}" aria-label="Delete">✕</button></li>`;
+    return `<li${adv ? ' class="next"' : ''}>${left}<b>${money(e.amount)}</b><button class="del" type="button" data-act="del" data-id="${esc(e.id)}" aria-label="Delete">✕</button></li>`;
   }
 
   function dayBlock(h, list, isToday) {
@@ -614,7 +629,7 @@
       if (!e) return head('Note') + '<p class="note">That spend is gone.</p>';
       const picks = quickNotes().flatMap(n => (n.subs.length ? n.subs.map(x => n.name + ' · ' + x) : [n.name]));
       return head('Note') + `
-        <p class="note">${money(e.amount)} · ${METHOD[e.method] || 'Card'} · ${fmtDate(e.date, true)}, ${timeOf(e.ts)}</p>
+        <p class="note">${money(e.amount)} · ${METHOD[e.method] || 'Card'} · ${fmtDate(e.date, true)}, ${timeOf(e.ts)}${e.type === 'advance' ? ` · from ${payMonth(e)}’s money` : ''}</p>
         <div class="group"><div class="note-pick">${picks.map(p => `<button type="button" class="nchip${p === e.note ? ' hi' : ''}" data-act="notePick" data-note="${esc(p)}">${esc(p)}</button>`).join('')}</div></div>
         <div class="group"><div class="strip-type"><input id="noteInput" type="text" value="${esc(e.note || '')}" placeholder="Or type a note" maxlength="60" autocomplete="off" enterkeyhint="done"><button type="button" class="nchip hi" data-act="noteSave">Save</button></div></div>
         ${e.note ? '<button class="btn ghost wide" type="button" data-act="noteClear">Remove the note</button>' : ''}`;
@@ -623,7 +638,7 @@
     today() {
       const d = view.daily, mk = d.month;
       const byDay = {};
-      for (const e of live('spend').concat(live('in'))) if (B.monthOf(e.date) === mk) (byDay[e.date] = byDay[e.date] || []).push(e);
+      for (const e of live('spend').concat(live('advance'), live('in'))) if (B.monthOf(e.date) === mk) (byDay[e.date] = byDay[e.date] || []).push(e);
       const days = d.history.map(h => dayBlock(h, (byDay[h.date] || []).sort((a, b) => b.ts - a.ts), h.date === view.day)).join('');
       return head('Daily limit') + `
         <div class="group">
@@ -1280,6 +1295,14 @@
       setDeleted(id, true);
       toast('Undone');
     } else if (act === 'close') hideStrip();
+    else if (act === 'next') {
+      const e = data.entries[strip.id];
+      if (!e) return;
+      const adv = e.type !== 'advance';
+      setType(e.id, adv ? 'advance' : 'spend');
+      buzz(10);
+      paintStrip();
+    }
     else if (act === 'back') { strip.mode = 'list'; paintStrip(); }
     else if (act === 'type') { strip.mode = 'type'; paintStrip(); }
     else if (act === 'save') noteDone($('#stripInput').value.trim());
